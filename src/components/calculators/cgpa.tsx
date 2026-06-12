@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from 'react'
 import { animate } from 'framer-motion'
-import { RotateCcw } from 'lucide-react'
+import { RotateCcw, Sparkles } from 'lucide-react'
 import { useStore } from '@/store/calculator-store'
 import { cn } from '@/lib/utils'
 
@@ -11,8 +11,7 @@ function AnimatedNum({ value, decimals = 2 }: { value: number; decimals?: number
   const prev = useRef(value)
   useEffect(() => {
     if (!ref.current) return
-    const from = prev.current
-    prev.current = value
+    const from = prev.current; prev.current = value
     const c = animate(from, value, {
       duration: 0.5, ease: 'easeOut',
       onUpdate(v) { if (ref.current) ref.current.textContent = v.toFixed(decimals) },
@@ -22,7 +21,7 @@ function AnimatedNum({ value, decimals = 2 }: { value: number; decimals?: number
   return <span ref={ref}>{value.toFixed(decimals)}</span>
 }
 
-function cgpaColor(v: number): string {
+function cgpaColor(v: number) {
   if (v >= 9) return 'text-emerald-400'
   if (v >= 8) return 'text-blue-400'
   if (v >= 7) return 'text-violet-400'
@@ -30,19 +29,19 @@ function cgpaColor(v: number): string {
   return 'text-red-400'
 }
 
-function feasibility(required: number): { label: string; color: string; bg: string } {
-  if (required > 10) return { label: 'Not achievable', color: 'text-red-400', bg: 'bg-red-950/40 border-red-900/60' }
-  if (required <= 0) return { label: 'Already achieved', color: 'text-emerald-400', bg: 'bg-emerald-950/40 border-emerald-900/60' }
-  if (required >= 9.5) return { label: 'Very difficult', color: 'text-orange-400', bg: 'bg-orange-950/40 border-orange-900/60' }
-  if (required >= 8.5) return { label: 'Challenging', color: 'text-yellow-400', bg: 'bg-yellow-950/40 border-yellow-900/60' }
-  if (required >= 7)   return { label: 'Achievable', color: 'text-blue-400', bg: 'bg-blue-950/40 border-blue-900/60' }
+function feasibility(req: number): { label: string; color: string; bg: string } {
+  if (req > 10)   return { label: 'Not achievable',   color: 'text-red-400',     bg: 'bg-red-950/40 border-red-900/60' }
+  if (req <= 0)   return { label: 'Already achieved', color: 'text-emerald-400', bg: 'bg-emerald-950/40 border-emerald-900/60' }
+  if (req >= 9.5) return { label: 'Very difficult',   color: 'text-orange-400',  bg: 'bg-orange-950/40 border-orange-900/60' }
+  if (req >= 8.5) return { label: 'Challenging',      color: 'text-yellow-400',  bg: 'bg-yellow-950/40 border-yellow-900/60' }
+  if (req >= 7)   return { label: 'Achievable',       color: 'text-blue-400',    bg: 'bg-blue-950/40 border-blue-900/60' }
   return { label: 'Safe target', color: 'text-emerald-400', bg: 'bg-emerald-950/40 border-emerald-900/60' }
 }
 
 function NumberInput({
-  label, hint, placeholder, value, onChange, max = 10, step = 0.01,
+  label, hint, vtopHint, placeholder, value, onChange, max = 10, step = 0.01,
 }: {
-  label: string; hint?: string; placeholder: string
+  label: string; hint?: string; vtopHint?: string; placeholder: string
   value: string; onChange: (v: string) => void; max?: number; step?: number
 }) {
   return (
@@ -50,6 +49,11 @@ function NumberInput({
       <div>
         <label className="text-xs font-medium text-foreground">{label}</label>
         {hint && <p className="text-[11px] text-muted-foreground">{hint}</p>}
+        {vtopHint && (
+          <p className="text-[10px] text-emerald-400/80 flex items-center gap-1 mt-0.5">
+            <Sparkles className="size-2.5" /> {vtopHint}
+          </p>
+        )}
       </div>
       <input
         type="number" min={0} max={max} step={step}
@@ -65,7 +69,29 @@ export function CGPACalculator() {
   const {
     creditsDone, cgpaSoFar, creditsSem, gpaSem, targetCgpa,
     setCgpaField, resetCGPA,
+    vtopData, vtopConnected, selectedSemId,
   } = useStore()
+
+  // Auto-fill from VTOP data when available
+  useEffect(() => {
+    if (!vtopData) return
+    if (vtopData.totalCredits > 0 && creditsDone === '') {
+      setCgpaField('creditsDone', String(vtopData.totalCredits))
+    }
+    if (vtopData.cgpa > 0 && cgpaSoFar === '') {
+      setCgpaField('cgpaSoFar', vtopData.cgpa.toFixed(2))
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vtopData])
+
+  // Auto-fill credits this semester when semester is selected
+  useEffect(() => {
+    if (!vtopData || !selectedSemId) return
+    const courses = vtopData.coursesBySem[selectedSemId] ?? []
+    const semCredits = courses.reduce((s, c) => s + c.credits, 0)
+    if (semCredits > 0) setCgpaField('creditsSem', String(semCredits))
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedSemId, vtopData])
 
   const cd = creditsDone !== '' ? Number(creditsDone) : null
   const cg = cgpaSoFar   !== '' ? Number(cgpaSoFar)   : null
@@ -80,30 +106,65 @@ export function CGPACalculator() {
   const requiredGpa    = hasAnticipated ? (tc! * (cd! + cs!) - cd! * cg!) / cs! : null
   const f = requiredGpa !== null ? feasibility(requiredGpa) : null
 
+  const isVtopFilled = vtopConnected && vtopData && vtopData.cgpa > 0
+
   return (
     <div className="space-y-5">
 
-      {/* ── Current CGPA ─────────────────────────────────────────────── */}
+      {/* VTOP autofill banner */}
+      {isVtopFilled && (
+        <div className="flex items-center gap-2.5 rounded-2xl border border-emerald-800/40 bg-emerald-950/30 px-4 py-3 text-xs text-emerald-400">
+          <Sparkles className="size-3.5 shrink-0" />
+          <span>Credits done and CGPA auto-filled from <strong>VTOP grade history</strong>. Edit if needed.</span>
+        </div>
+      )}
+
+      {/* ── Current CGPA ──────────────────────────────────────────────────── */}
       <div className="rounded-2xl border border-border bg-card overflow-hidden">
         <div className="flex items-center justify-between px-5 py-3.5 border-b border-border/60">
           <div>
             <p className="text-sm font-semibold">Current CGPA</p>
             <p className="text-xs text-muted-foreground">Updated after this semester</p>
           </div>
-          <button
-            onClick={resetCGPA}
-            className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
-          >
+          <button onClick={resetCGPA} className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors">
             <RotateCcw className="size-3" /> Reset
           </button>
         </div>
 
         <div className="p-5 space-y-4">
           <div className="grid grid-cols-2 gap-3">
-            <NumberInput label="Credits done so far" hint="Exclude VITOL" placeholder="e.g. 120" value={creditsDone} onChange={v => setCgpaField('creditsDone', v)} max={400} step={1} />
-            <NumberInput label="CGPA so far" placeholder="e.g. 8.50" value={cgpaSoFar} onChange={v => setCgpaField('cgpaSoFar', v)} />
-            <NumberInput label="Credits this semester" hint="Exclude VITOL" placeholder="e.g. 24" value={creditsSem} onChange={v => setCgpaField('creditsSem', v)} max={50} step={1} />
-            <NumberInput label="GPA this semester" hint="Use GPA tab" placeholder="e.g. 9.00" value={gpaSem} onChange={v => setCgpaField('gpaSem', v)} />
+            <NumberInput
+              label="Credits done so far"
+              hint="Exclude VITOL"
+              vtopHint={isVtopFilled ? 'From VTOP grade history' : undefined}
+              placeholder="e.g. 120"
+              value={creditsDone}
+              onChange={v => setCgpaField('creditsDone', v)}
+              max={400} step={1}
+            />
+            <NumberInput
+              label="CGPA so far"
+              vtopHint={isVtopFilled ? 'From VTOP grade history' : undefined}
+              placeholder="e.g. 8.50"
+              value={cgpaSoFar}
+              onChange={v => setCgpaField('cgpaSoFar', v)}
+            />
+            <NumberInput
+              label="Credits this semester"
+              hint="Exclude VITOL"
+              vtopHint={isVtopFilled && selectedSemId ? 'From selected semester' : undefined}
+              placeholder="e.g. 24"
+              value={creditsSem}
+              onChange={v => setCgpaField('creditsSem', v)}
+              max={50} step={1}
+            />
+            <NumberInput
+              label="GPA this semester"
+              hint="Use GPA tab"
+              placeholder="e.g. 9.00"
+              value={gpaSem}
+              onChange={v => setCgpaField('gpaSem', v)}
+            />
           </div>
 
           {finalCgpa !== null && cd !== null && cs !== null && cg !== null && gs !== null ? (
@@ -134,7 +195,7 @@ export function CGPACalculator() {
         </div>
       </div>
 
-      {/* ── Target CGPA Predictor ─────────────────────────────────────── */}
+      {/* ── Target CGPA ───────────────────────────────────────────────────── */}
       <div className="rounded-2xl border border-border bg-card overflow-hidden">
         <div className="px-5 py-3.5 border-b border-border/60">
           <p className="text-sm font-semibold">Target CGPA</p>
@@ -181,10 +242,7 @@ export function CGPACalculator() {
               {requiredGpa > 0 && requiredGpa <= 10 && (
                 <div className="mt-4 pt-3 border-t border-white/10">
                   <div className="h-1.5 rounded-full bg-black/20 overflow-hidden">
-                    <div
-                      className="h-full rounded-full transition-all duration-700"
-                      style={{ width: `${Math.min(100, (requiredGpa / 10) * 100)}%`, backgroundColor: 'currentColor' }}
-                    />
+                    <div className="h-full rounded-full transition-all duration-700" style={{ width: `${Math.min(100, requiredGpa * 10)}%`, backgroundColor: 'currentColor' }} />
                   </div>
                   <div className="flex justify-between text-[10px] text-muted-foreground mt-1">
                     <span>0</span><span>5</span><span>10</span>

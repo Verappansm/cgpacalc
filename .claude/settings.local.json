@@ -2,7 +2,23 @@
   "permissions": {
     "allow": [
       "PowerShell(New-Item *)",
-      "Bash(npm run *)"
+      "Bash(npm run *)",
+      "Bash(gh repo *)",
+      "Bash(gh api *)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:api.github.com)",
+      "Bash('p')",
+      "Bash(node -e \"const cheerio = require\\('cheerio'\\); const $ = cheerio.load\\('<p>test</p>'\\); console.log\\($\\('p'\\).text\\(\\)\\)\")",
+      "Bash(node -e \"const c = require\\('cheerio'\\); const d = c.load\\('<p>test</p>'\\); console.log\\(d\\('p'\\).text\\(\\)\\)\")",
+      "Bash(npx tsc *)",
+      "Bash(curl -s http://localhost:3000/app)",
+      "Bash(curl -s http://localhost:3000/api/vtop/captcha)",
+      "Bash(curl *)",
+      "Bash(node *)",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\('sessionKey:', d.get\\('sessionKey',''\\)[:10]+'...', '| isRecaptcha:', d.get\\('isRecaptcha'\\), '| captcha len:', len\\(d.get\\('captchaBase64',''\\) or ''\\), '| error:', d.get\\('error',''\\)\\)\")",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\('Error:', d.get\\('error','none'\\)\\)\")",
+      "PowerShell(gh api *)"
     ]
   }
 }

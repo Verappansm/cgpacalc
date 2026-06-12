@@ -1,42 +1,34 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useMemo, useEffect } from 'react'
 import {
   AreaChart, Area, XAxis, YAxis, ReferenceLine,
   ResponsiveContainer, Tooltip,
 } from 'recharts'
-import { AlertTriangle, Info, RotateCcw, ChevronUp } from 'lucide-react'
+import { AlertTriangle, Info, RotateCcw, ChevronUp, ChevronDown, Sparkles } from 'lucide-react'
 import { useStore } from '@/store/calculator-store'
 import { GRADE_CONFIG, D2_N65, TOTAL_SIGMA_SCALE, type Grade } from '@/lib/constants'
 import {
   computeGradeBands, gradeForMark, generateCurvePoints,
-  estimateSigma, fallbackSigma, type GradeBand,
+  fallbackSigma, type GradeBand,
 } from '@/lib/distribution'
 import { cn } from '@/lib/utils'
 
-// ── Types ─────────────────────────────────────────────────────────────────
-
 type ChartPoint = { x: number; totalCurve: number } & Partial<Record<Grade, number>>
 
-// ── Helpers ───────────────────────────────────────────────────────────────
-
-function marksForNextGrade(studentTotal: number, bands: GradeBand[]): {
-  nextGrade: Grade | null; marksNeeded: number; requiredExt: number | null
-} {
+function marksForNextGrade(studentTotal: number, bands: GradeBand[]) {
   const order: Grade[] = ['F', 'E', 'D', 'C', 'B', 'A', 'S']
   const current = gradeForMark(studentTotal, bands)
   const idx = order.indexOf(current)
-  if (idx >= order.length - 1) return { nextGrade: null, marksNeeded: 0, requiredExt: null }
+  if (idx >= order.length - 1) return { nextGrade: null, marksNeeded: 0 }
   const next = order[idx + 1]
   const nextBand = bands.find(b => b.grade === next)
-  if (!nextBand) return { nextGrade: null, marksNeeded: 0, requiredExt: null }
-  const needed = Math.max(0, nextBand.min - studentTotal)
-  return { nextGrade: next, marksNeeded: needed, requiredExt: null }
+  if (!nextBand) return { nextGrade: null, marksNeeded: 0 }
+  return { nextGrade: next, marksNeeded: Math.max(0, nextBand.min - studentTotal) }
 }
 
-function percentile(studentTotal: number, mean: number, sigma: number): number {
+function percentile(studentTotal: number, mean: number, sigma: number) {
   const z = (studentTotal - mean) / sigma
-  // Abramowitz approximation
   if (z < -6) return 0
   if (z > 6) return 100
   const b = [0.319381530, -0.356563782, 1.781477937, -1.821255978, 1.330274429]
@@ -48,20 +40,14 @@ function percentile(studentTotal: number, mean: number, sigma: number): number {
   return Math.round(cdf * 100)
 }
 
-// ── Sub-components ────────────────────────────────────────────────────────
-
-function SectionCard({
-  num, title, sub, children, complete,
-}: {
+function SectionCard({ num, title, sub, children, complete }: {
   num: number; title: string; sub: string; children: React.ReactNode; complete?: boolean
 }) {
   return (
     <div className="rounded-2xl border border-border bg-card overflow-hidden">
       <div className="flex items-center gap-3 px-5 py-4 border-b border-border/60">
-        <div className={cn(
-          'w-6 h-6 rounded-full flex items-center justify-center text-xs font-black shrink-0',
-          complete ? 'bg-primary text-primary-foreground' : 'bg-secondary text-muted-foreground border border-border'
-        )}>
+        <div className={cn('w-6 h-6 rounded-full flex items-center justify-center text-xs font-black shrink-0',
+          complete ? 'bg-primary text-primary-foreground' : 'bg-secondary text-muted-foreground border border-border')}>
           {num}
         </div>
         <div>
@@ -74,10 +60,8 @@ function SectionCard({
   )
 }
 
-function Num({
-  label, hint, placeholder, value, onChange, max, step = 0.5,
-}: {
-  label: string; hint?: string; placeholder: string
+function Num({ label, hint, vtopHint, placeholder, value, onChange, max, step = 0.5 }: {
+  label: string; hint?: string; vtopHint?: string; placeholder: string
   value: string; onChange: (v: string) => void; max: number; step?: number
 }) {
   return (
@@ -85,6 +69,11 @@ function Num({
       <div>
         <label className="text-xs font-medium">{label}</label>
         {hint && <p className="text-[11px] text-muted-foreground">{hint}</p>}
+        {vtopHint && (
+          <p className="text-[10px] text-emerald-400/80 flex items-center gap-1 mt-0.5">
+            <Sparkles className="size-2.5" /> {vtopHint}
+          </p>
+        )}
       </div>
       <input
         type="number" min={0} max={max} step={step}
@@ -98,11 +87,7 @@ function Num({
 
 function ScaleHint({ raw, from, to }: { raw: string; from: number; to: number }) {
   if (!raw) return null
-  return (
-    <p className="text-[11px] text-muted-foreground mt-1 tabular-nums">
-      → {((Number(raw) / from) * to).toFixed(2)} / {to}
-    </p>
-  )
+  return <p className="text-[11px] text-muted-foreground mt-1 tabular-nums">→ {((Number(raw) / from) * to).toFixed(2)} / {to}</p>
 }
 
 function InternalBar({ label, val, max }: { label: string; val: number; max: number }) {
@@ -122,34 +107,49 @@ function InternalBar({ label, val, max }: { label: string; val: number; max: num
   )
 }
 
-// Bell curve custom tooltip
 function BellTooltip({ active, payload }: { active?: boolean; payload?: { payload: ChartPoint }[] }) {
   if (!active || !payload?.[0]) return null
-  const x = payload[0].payload.x
-  const y = payload[0].payload.totalCurve
+  const { x, totalCurve } = payload[0].payload
   return (
     <div className="rounded-lg border border-border bg-card px-3 py-2 text-xs shadow-xl">
       <p className="font-semibold">{x.toFixed(0)} marks</p>
-      <p className="text-muted-foreground">density: {(y * 100).toFixed(3)}%</p>
+      <p className="text-muted-foreground">density: {(totalCurve * 100).toFixed(3)}%</p>
     </div>
   )
 }
-
-// ── Main Component ────────────────────────────────────────────────────────
 
 export function GradePredictor() {
   const {
     cat1, cat2, internals, cat1Avg, cat2Avg, internalAvg,
     maxInt, minInt, classSize, extSlider,
+    selectedGradeCode, setSelectedGradeCode,
     setGradeField, setExtSlider, resetGrade,
+    vtopData, vtopConnected,
   } = useStore()
 
-  // ── Derived values ──────────────────────────────────────────────────
+  // Theory-only courses from current semester (VTOP)
+  const theoryCourses = useMemo(() => {
+    if (!vtopData) return []
+    // Use the most recent semester's courses
+    const latestSemId = vtopData.semesters[0]?.id
+    if (!latestSemId) return []
+    return (vtopData.coursesBySem[latestSemId] ?? []).filter(c => c.type === 'THEORY')
+  }, [vtopData])
+
+  // Auto-fill marks when course is selected
+  useEffect(() => {
+    if (!selectedGradeCode || !vtopData) return
+    const marks = vtopData.currentSemMarks.find(m => m.courseCode === selectedGradeCode)
+    if (!marks) return
+    if (marks.cat1 !== undefined) setGradeField('cat1', String(marks.cat1))
+    if (marks.cat2 !== undefined) setGradeField('cat2', String(marks.cat2))
+    if (marks.internals !== undefined) setGradeField('internals', String(marks.internals))
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedGradeCode, vtopData])
 
   const sc = (v: string, from: number, to: number) => v !== '' ? (Number(v) / from) * to : null
-
-  const cat1s = sc(cat1, 50, 15)
-  const cat2s = sc(cat2, 50, 15)
+  const cat1s  = sc(cat1,  50, 15)
+  const cat2s  = sc(cat2,  50, 15)
   const intTotal = cat1s !== null && cat2s !== null && internals !== ''
     ? cat1s + cat2s + Number(internals) : null
 
@@ -157,50 +157,34 @@ export function GradePredictor() {
   const cat2AvgS = sc(cat2Avg, 50, 15)
   const classIntMean = cat1AvgS !== null && cat2AvgS !== null && internalAvg !== ''
     ? cat1AvgS + cat2AvgS + Number(internalAvg) : null
-
   const classTotalMean = classIntMean !== null ? classIntMean * (100 / 60) : null
 
   const hasRange = maxInt !== '' && minInt !== ''
   const n = classSize !== '' ? Number(classSize) : 65
-  // d2 scales slightly with n; approximate as D2_N65
   const d2 = D2_N65
 
   const sigma = useMemo(() => {
     if (classTotalMean === null) return null
     if (hasRange) {
       const rangeInt = Math.max(0, Number(maxInt) - Number(minInt))
-      const sigmaInt = rangeInt / d2
-      return Math.max(1, sigmaInt * TOTAL_SIGMA_SCALE)
+      return Math.max(1, (rangeInt / d2) * TOTAL_SIGMA_SCALE)
     }
     return fallbackSigma(classTotalMean)
   }, [classTotalMean, hasRange, maxInt, minInt, d2])
 
-  const extContrib = (extSlider / 100) * 40
+  const extContrib   = (extSlider / 100) * 40
   const studentTotal = intTotal !== null ? Math.max(0, Math.min(100, Math.round(intTotal + extContrib))) : null
-
-  const bands = useMemo(
-    () => classTotalMean !== null && sigma !== null ? computeGradeBands(classTotalMean, sigma) : null,
-    [classTotalMean, sigma],
-  )
-
+  const bands        = useMemo(() => classTotalMean !== null && sigma !== null ? computeGradeBands(classTotalMean, sigma) : null, [classTotalMean, sigma])
   const predictedGrade = bands && studentTotal !== null ? gradeForMark(studentTotal, bands) : null
-  const classPercentile = classTotalMean && sigma && studentTotal !== null
-    ? percentile(studentTotal, classTotalMean, sigma) : null
-
+  const classPercentile = classTotalMean && sigma && studentTotal !== null ? percentile(studentTotal, classTotalMean, sigma) : null
   const nextInfo = bands && studentTotal !== null ? marksForNextGrade(studentTotal, bands) : null
-  const extForNext = nextInfo?.marksNeeded
-    ? Math.ceil(((nextInfo.marksNeeded) / 40) * 100) : null
-
-  // ── Chart data ──────────────────────────────────────────────────────
+  const extForNext = nextInfo?.marksNeeded ? Math.ceil((nextInfo.marksNeeded / 40) * 100) : null
 
   const chartData = useMemo((): ChartPoint[] => {
     if (!classTotalMean || !sigma || !bands) return []
-    const pts = generateCurvePoints(classTotalMean, sigma)
-    return pts.map(pt => {
+    return generateCurvePoints(classTotalMean, sigma).map(pt => {
       const row: ChartPoint = { x: Math.round(pt.x * 10) / 10, totalCurve: pt.y }
-      for (const b of bands) {
-        row[b.grade] = (pt.x >= b.min && pt.x <= b.max + 0.5) ? pt.y : undefined
-      }
+      for (const b of bands) row[b.grade] = (pt.x >= b.min && pt.x <= b.max + 0.5) ? pt.y : undefined
       return row
     })
   }, [classTotalMean, sigma, bands])
@@ -208,23 +192,60 @@ export function GradePredictor() {
   const isStep1Done = intTotal !== null
   const isStep2Done = classTotalMean !== null
   const hasResults = isStep1Done && isStep2Done && studentTotal !== null && bands !== null
+  const hasVtopMarks = vtopConnected && vtopData && vtopData.currentSemMarks.length > 0
 
   return (
     <div className="space-y-4">
+
+      {/* VTOP course selector */}
+      {vtopConnected && vtopData && theoryCourses.length > 0 && (
+        <div className="rounded-2xl border border-border bg-card overflow-hidden">
+          <div className="flex items-center justify-between px-5 py-3.5 border-b border-border/60">
+            <p className="text-sm font-semibold">Select Course</p>
+            <span className="text-[10px] bg-emerald-950/60 text-emerald-400 border border-emerald-800/40 px-2 py-0.5 rounded-full font-medium">
+              VTOP synced
+            </span>
+          </div>
+          <div className="p-3 relative">
+            <select
+              value={selectedGradeCode ?? ''}
+              onChange={e => { setSelectedGradeCode(e.target.value || null); resetGrade() }}
+              className="w-full h-10 appearance-none rounded-xl border border-border/60 bg-secondary/30 px-3 pr-8 text-sm text-foreground focus:outline-none focus:border-primary/50 transition-colors cursor-pointer"
+            >
+              <option value="">— select a theory course —</option>
+              {theoryCourses.map(c => (
+                <option key={c.code} value={c.code}>{c.code} — {c.name}</option>
+              ))}
+            </select>
+            <ChevronDown className="pointer-events-none absolute right-6 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+          </div>
+          {hasVtopMarks && selectedGradeCode && (
+            <p className="px-4 pb-3 text-[11px] text-muted-foreground flex items-center gap-1">
+              <Sparkles className="size-3 text-emerald-400" />
+              Your marks auto-filled from VTOP — edit if needed
+            </p>
+          )}
+          {!hasVtopMarks && (
+            <p className="px-4 pb-3 text-[11px] text-muted-foreground">
+              Marks not yet published on VTOP — enter manually below
+            </p>
+          )}
+        </div>
+      )}
 
       {/* Step 1: Your marks */}
       <SectionCard num={1} title="Your internal marks" sub="CAT scores are out of 50 → scaled to 15 each" complete={isStep1Done}>
         <div className="space-y-3">
           <div className="grid grid-cols-3 gap-3">
             <div>
-              <Num label="CAT 1" hint="out of 50" placeholder="38" value={cat1} onChange={v => setGradeField('cat1', v)} max={50} />
+              <Num label="CAT 1" hint="out of 50" vtopHint={hasVtopMarks && selectedGradeCode ? 'VTOP' : undefined} placeholder="38" value={cat1} onChange={v => setGradeField('cat1', v)} max={50} />
               <ScaleHint raw={cat1} from={50} to={15} />
             </div>
             <div>
-              <Num label="CAT 2" hint="out of 50" placeholder="42" value={cat2} onChange={v => setGradeField('cat2', v)} max={50} />
+              <Num label="CAT 2" hint="out of 50" vtopHint={hasVtopMarks && selectedGradeCode ? 'VTOP' : undefined} placeholder="42" value={cat2} onChange={v => setGradeField('cat2', v)} max={50} />
               <ScaleHint raw={cat2} from={50} to={15} />
             </div>
-            <Num label="Internals" hint="out of 30" placeholder="25" value={internals} onChange={v => setGradeField('internals', v)} max={30} />
+            <Num label="Internals" hint="out of 30" vtopHint={hasVtopMarks && selectedGradeCode ? 'VTOP' : undefined} placeholder="25" value={internals} onChange={v => setGradeField('internals', v)} max={30} />
           </div>
           {intTotal !== null && <InternalBar label="Your internal marks" val={intTotal} max={60} />}
         </div>
@@ -250,8 +271,6 @@ export function GradePredictor() {
               {classTotalMean && <InternalBar label="Est. class total mean" val={classTotalMean} max={100} />}
             </div>
           )}
-
-          {/* Optional range for σ */}
           <details className="group">
             <summary className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground hover:text-foreground list-none mt-2">
               <ChevronUp className="size-3.5 rotate-180 transition-transform group-open:rotate-0" />
@@ -259,7 +278,7 @@ export function GradePredictor() {
             </summary>
             <div className="mt-3 grid grid-cols-3 gap-3">
               <Num label="Highest internal" hint="out of 60" placeholder="55" value={maxInt} onChange={v => setGradeField('maxInt', v)} max={60} />
-              <Num label="Lowest internal" hint="out of 60" placeholder="28" value={minInt} onChange={v => setGradeField('minInt', v)} max={60} />
+              <Num label="Lowest internal"  hint="out of 60" placeholder="28" value={minInt} onChange={v => setGradeField('minInt', v)} max={60} />
               <Num label="Class size" hint="default 65" placeholder="65" value={classSize} onChange={v => setGradeField('classSize', v)} max={200} step={1} />
             </div>
             {sigma !== null && classTotalMean !== null && (
@@ -276,30 +295,25 @@ export function GradePredictor() {
         </div>
       </SectionCard>
 
-      {/* Step 3: Final exam slider */}
+      {/* Step 3: End-sem slider */}
       <SectionCard num={3} title="End semester exam" sub="Drag to simulate — exam is out of 100, contributes 40 marks" complete={intTotal !== null}>
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <span className="text-xs text-muted-foreground">Expected marks (out of 100)</span>
             <span className="font-black text-xl tabular-nums text-primary">{extSlider}</span>
           </div>
-
           <div className="relative">
             <input
-              type="range"
-              min={0} max={100} step={1}
+              type="range" min={0} max={100} step={1}
               value={extSlider}
               onChange={e => setExtSlider(Number(e.target.value))}
               className="vit-slider"
-              style={{
-                background: `linear-gradient(to right, oklch(0.62 0.19 238) 0%, oklch(0.62 0.19 238) ${extSlider}%, oklch(0.22 0 0) ${extSlider}%, oklch(0.22 0 0) 100%)`
-              }}
+              style={{ background: `linear-gradient(to right, oklch(0.62 0.19 238) 0%, oklch(0.62 0.19 238) ${extSlider}%, oklch(0.22 0 0) ${extSlider}%, oklch(0.22 0 0) 100%)` }}
             />
             <div className="flex justify-between text-[10px] text-muted-foreground mt-1">
               <span>0</span><span>25</span><span>50</span><span>75</span><span>100</span>
             </div>
           </div>
-
           {intTotal !== null && (
             <div className="grid grid-cols-3 gap-2 text-center">
               <div className="rounded-xl bg-secondary/30 border border-border/40 p-3">
@@ -325,19 +339,14 @@ export function GradePredictor() {
       {/* Results */}
       {hasResults && bands && studentTotal !== null && predictedGrade && classTotalMean && sigma ? (
         <div className="space-y-4">
-          {/* Grade result card */}
-          <div
-            className="rounded-2xl border-2 overflow-hidden"
-            style={{ borderColor: GRADE_CONFIG[predictedGrade].hex + '55' }}
-          >
+          {/* Grade result */}
+          <div className="rounded-2xl border-2 overflow-hidden" style={{ borderColor: GRADE_CONFIG[predictedGrade].hex + '55' }}>
             <div className="h-1" style={{ background: GRADE_CONFIG[predictedGrade].hex }} />
             <div className="p-5">
               <div className="flex items-center justify-between flex-wrap gap-4">
                 <div>
                   <p className="text-[11px] text-muted-foreground uppercase tracking-wider mb-2">Predicted grade</p>
-                  <p className={cn('text-7xl font-black', GRADE_CONFIG[predictedGrade].color)}>
-                    {predictedGrade}
-                  </p>
+                  <p className={cn('text-7xl font-black', GRADE_CONFIG[predictedGrade].color)}>{predictedGrade}</p>
                   <p className="text-sm text-muted-foreground mt-1">{GRADE_CONFIG[predictedGrade].label}</p>
                 </div>
                 <div className="space-y-2 text-right text-xs">
@@ -353,23 +362,15 @@ export function GradePredictor() {
                   </div>
                 </div>
               </div>
-
-              {/* Next grade nudge */}
               {nextInfo?.nextGrade && nextInfo.marksNeeded > 0 && (
                 <div className="mt-4 pt-4 border-t border-border/60">
                   <p className="text-xs text-muted-foreground">
                     You need{' '}
-                    <span className="font-semibold text-foreground">{nextInfo.marksNeeded} more marks</span>
-                    {' '}to reach{' '}
-                    <span className={cn('font-black', GRADE_CONFIG[nextInfo.nextGrade].color)}>
-                      {nextInfo.nextGrade}
-                    </span>
+                    <span className="font-semibold text-foreground">{nextInfo.marksNeeded} more marks</span>{' '}
+                    to reach{' '}
+                    <span className={cn('font-black', GRADE_CONFIG[nextInfo.nextGrade].color)}>{nextInfo.nextGrade}</span>
                     {extForNext !== null && extForNext <= 100 && (
-                      <>
-                        {' '}— score{' '}
-                        <span className="font-semibold text-foreground">{extForNext}+</span>
-                        {' '}in your end sem exam
-                      </>
+                      <> — score <span className="font-semibold text-foreground">{extForNext}+</span> in your end sem exam</>
                     )}
                   </p>
                 </div>
@@ -391,62 +392,19 @@ export function GradePredictor() {
             <div className="px-2 py-4">
               <ResponsiveContainer width="100%" height={180}>
                 <AreaChart data={chartData} margin={{ top: 4, right: 8, left: 8, bottom: 4 }}>
-                  <defs>
-                    {/* Clip student position */}
-                  </defs>
-                  <XAxis
-                    dataKey="x"
-                    type="number"
-                    domain={[0, 100]}
-                    tick={{ fontSize: 10, fill: '#555' }}
-                    tickLine={false}
-                    axisLine={false}
-                    interval={9}
-                  />
+                  <XAxis dataKey="x" type="number" domain={[0, 100]} tick={{ fontSize: 10, fill: '#555' }} tickLine={false} axisLine={false} interval={9} />
                   <YAxis hide />
                   <Tooltip content={<BellTooltip />} />
-
-                  {/* Grade colored areas */}
                   {(['F', 'E', 'D', 'C', 'B', 'A', 'S'] as Grade[]).map(g => (
-                    <Area
-                      key={g}
-                      type="monotone"
-                      dataKey={g}
-                      fill={GRADE_CONFIG[g].fillHex}
-                      stroke={GRADE_CONFIG[g].hex}
-                      strokeWidth={0.5}
-                      isAnimationActive={false}
-                      connectNulls={false}
-                    />
+                    <Area key={g} type="monotone" dataKey={g} fill={GRADE_CONFIG[g].fillHex} stroke={GRADE_CONFIG[g].hex} strokeWidth={0.5} isAnimationActive={false} connectNulls={false} />
                   ))}
-
-                  {/* Curve outline */}
-                  <Area
-                    type="monotone"
-                    dataKey="totalCurve"
-                    fill="transparent"
-                    stroke="rgba(255,255,255,0.4)"
-                    strokeWidth={1.5}
-                    isAnimationActive={false}
-                    connectNulls
-                  />
-
-                  {/* Class mean */}
+                  <Area type="monotone" dataKey="totalCurve" fill="transparent" stroke="rgba(255,255,255,0.4)" strokeWidth={1.5} isAnimationActive={false} connectNulls />
                   <ReferenceLine x={Math.round(classTotalMean)} stroke="#555" strokeDasharray="4 3" strokeWidth={1} />
-
-                  {/* Student score */}
                   {studentTotal !== null && (
-                    <ReferenceLine
-                      x={studentTotal}
-                      stroke="#fff"
-                      strokeWidth={2}
-                      label={{ value: `${studentTotal}`, position: 'top', fontSize: 10, fill: '#fff' }}
-                    />
+                    <ReferenceLine x={studentTotal} stroke="#fff" strokeWidth={2} label={{ value: `${studentTotal}`, position: 'top', fontSize: 10, fill: '#fff' }} />
                   )}
                 </AreaChart>
               </ResponsiveContainer>
-
-              {/* Grade legend */}
               <div className="flex flex-wrap gap-2 px-4 mt-1">
                 {(Object.entries(GRADE_CONFIG) as [Grade, typeof GRADE_CONFIG[Grade]][]).map(([g, cfg]) => (
                   <div key={g} className="flex items-center gap-1.5">
@@ -459,7 +417,7 @@ export function GradePredictor() {
             </div>
           </div>
 
-          {/* Grade boundaries table */}
+          {/* Grade boundaries */}
           <div className="rounded-2xl border border-border bg-card overflow-hidden">
             <div className="px-5 py-4 border-b border-border/60">
               <p className="text-sm font-semibold">Grade Boundaries</p>
@@ -470,23 +428,13 @@ export function GradePredictor() {
                 const isYou = studentTotal !== null && studentTotal >= b.min && studentTotal <= b.max
                 const cfg = GRADE_CONFIG[b.grade]
                 return (
-                  <div
-                    key={b.grade}
-                    className={cn(
-                      'grid grid-cols-[28px_1fr_1fr_auto] gap-2 items-center rounded-xl px-3 py-2.5',
-                      isYou ? `${cfg.bg} ${cfg.border} border` : 'bg-secondary/10'
-                    )}
-                  >
+                  <div key={b.grade} className={cn('grid grid-cols-[28px_1fr_1fr_auto] gap-2 items-center rounded-xl px-3 py-2.5', isYou ? `${cfg.bg} ${cfg.border} border` : 'bg-secondary/10')}>
                     <span className={cn('text-base font-black text-center', cfg.color)}>{b.grade}</span>
                     <span className="font-mono text-xs tabular-nums text-foreground">{b.formula}</span>
                     <span className="text-[11px] text-muted-foreground">
-                      {b.grade === 'S' ? 'μ+1.5σ, min 90%'
-                        : b.grade === 'A' ? 'μ+0.5σ to μ+1.5σ'
-                        : b.grade === 'B' ? 'μ−0.5σ to μ+0.5σ'
-                        : b.grade === 'C' ? 'μ−σ to μ−0.5σ'
-                        : b.grade === 'D' ? 'μ−1.5σ to μ−σ'
-                        : b.grade === 'E' ? 'μ−2σ to μ−1.5σ'
-                        : 'below μ−2σ'}
+                      {b.grade === 'S' ? 'μ+1.5σ, min 90%' : b.grade === 'A' ? 'μ+0.5σ to μ+1.5σ'
+                        : b.grade === 'B' ? 'μ−0.5σ to μ+0.5σ' : b.grade === 'C' ? 'μ−σ to μ−0.5σ'
+                        : b.grade === 'D' ? 'μ−1.5σ to μ−σ' : b.grade === 'E' ? 'μ−2σ to μ−1.5σ' : 'below μ−2σ'}
                     </span>
                     {isYou && <span className={cn('text-[10px] font-semibold px-2 py-0.5 rounded-full', cfg.bg, cfg.color)}>you</span>}
                   </div>
@@ -495,22 +443,17 @@ export function GradePredictor() {
             </div>
           </div>
 
-          {/* Disclaimer */}
           <div className="flex items-start gap-2 rounded-2xl border border-yellow-900/40 bg-yellow-950/20 px-4 py-3 text-xs text-yellow-400/80">
             <AlertTriangle className="size-3.5 mt-0.5 shrink-0" />
-            <span>
-              These predictions are approximate and based on statistical estimation. VIT computes actual grade boundaries from full class results after the end semester exam. Class mean assumes external performance is proportional to internal performance.
-            </span>
+            <span>These predictions are approximate and based on statistical estimation. VIT computes actual grade boundaries from full class results after the end semester exam.</span>
           </div>
         </div>
       ) : (
         <div className="rounded-2xl border border-dashed border-border/40 py-10 text-center space-y-1.5">
           <p className="text-sm text-muted-foreground">Complete steps 1 and 2, then adjust the slider to see predictions</p>
-          <div className="flex items-center justify-center gap-2 mt-3">
-            <button onClick={resetGrade} className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors">
-              <RotateCcw className="size-3" /> Reset
-            </button>
-          </div>
+          <button onClick={resetGrade} className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors mx-auto mt-3">
+            <RotateCcw className="size-3" /> Reset
+          </button>
         </div>
       )}
     </div>

@@ -1,23 +1,30 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import type { VtopData } from '@/lib/vtop-types'
 
-// ── GPA store ─────────────────────────────────────────────────────────────
+// ── GPA store ─────────────────────────────────────────────────────────────────
 
 export type CourseRow = {
   id: string
+  code: string
+  name: string
   credits: string
   grade: string
+  type: 'THEORY' | 'LAB' | 'PROJECT' | ''
 }
 
 type GPAState = {
   rows: CourseRow[]
+  selectedSemId: string | null
   addRow: () => void
   removeRow: (id: string) => void
-  updateRow: (id: string, field: 'credits' | 'grade', value: string) => void
+  updateRow: (id: string, field: keyof Pick<CourseRow, 'credits' | 'grade' | 'name'>, value: string) => void
+  setRows: (rows: CourseRow[]) => void
+  setSelectedSemId: (id: string | null) => void
   resetGPA: () => void
 }
 
-// ── CGPA store ────────────────────────────────────────────────────────────
+// ── CGPA store ────────────────────────────────────────────────────────────────
 
 type CGPAState = {
   creditsDone: string
@@ -25,11 +32,14 @@ type CGPAState = {
   creditsSem: string
   gpaSem: string
   targetCgpa: string
-  setCgpaField: (field: keyof Omit<CGPAState, 'setCgpaField' | 'resetCGPA'>, value: string) => void
+  setCgpaField: (
+    field: keyof Omit<CGPAState, 'setCgpaField' | 'resetCGPA'>,
+    value: string,
+  ) => void
   resetCGPA: () => void
 }
 
-// ── Grade Predictor store ─────────────────────────────────────────────────
+// ── Grade Predictor store ─────────────────────────────────────────────────────
 
 type GradeState = {
   cat1: string
@@ -42,53 +52,110 @@ type GradeState = {
   minInt: string
   classSize: string
   extSlider: number
+  selectedGradeCode: string | null
   setGradeField: (
-    field: keyof Omit<GradeState, 'setGradeField' | 'resetGrade' | 'setExtSlider'>,
+    field: keyof Omit<GradeState, 'setGradeField' | 'resetGrade' | 'setExtSlider' | 'setSelectedGradeCode'>,
     value: string,
   ) => void
   setExtSlider: (value: number) => void
+  setSelectedGradeCode: (code: string | null) => void
   resetGrade: () => void
 }
 
-// ── Combined store ────────────────────────────────────────────────────────
+// ── VTOP store (not persisted) ────────────────────────────────────────────────
 
-type Store = GPAState & CGPAState & GradeState
+type VtopState = {
+  vtopData: VtopData | null
+  vtopConnected: boolean
+  vtopLoading: boolean
+  vtopError: string | null
+  connectVtop: (data: VtopData) => void
+  setVtopLoading: (v: boolean) => void
+  setVtopError: (v: string | null) => void
+  disconnectVtop: () => void
+}
+
+// ── Combined store ────────────────────────────────────────────────────────────
+
+type Store = GPAState & CGPAState & GradeState & VtopState
 
 const defaultRow = (): CourseRow => ({
   id: Date.now().toString() + Math.random().toString(36).slice(2),
+  code: '',
+  name: '',
   credits: '',
   grade: 'S',
+  type: '',
 })
 
 export const useStore = create<Store>()(
   persist(
     (set) => ({
-      // GPA
+      // ── GPA ──────────────────────────────────────────────────────────────
       rows: [defaultRow()],
+      selectedSemId: null,
       addRow: () => set(s => ({ rows: [...s.rows, defaultRow()] })),
-      removeRow: (id) => set(s => ({ rows: s.rows.length > 1 ? s.rows.filter(r => r.id !== id) : s.rows })),
+      removeRow: (id) =>
+        set(s => ({ rows: s.rows.length > 1 ? s.rows.filter(r => r.id !== id) : s.rows })),
       updateRow: (id, field, value) =>
         set(s => ({ rows: s.rows.map(r => r.id === id ? { ...r, [field]: value } : r) })),
-      resetGPA: () => set({ rows: [defaultRow()] }),
+      setRows: (rows) => set({ rows }),
+      setSelectedSemId: (id) => set({ selectedSemId: id }),
+      resetGPA: () => set({ rows: [defaultRow()], selectedSemId: null }),
 
-      // CGPA
+      // ── CGPA ─────────────────────────────────────────────────────────────
       creditsDone: '', cgpaSoFar: '', creditsSem: '', gpaSem: '', targetCgpa: '',
       setCgpaField: (field, value) => set({ [field]: value } as Partial<Store>),
       resetCGPA: () => set({ creditsDone: '', cgpaSoFar: '', creditsSem: '', gpaSem: '', targetCgpa: '' }),
 
-      // Grade Predictor
+      // ── Grade Predictor ───────────────────────────────────────────────────
       cat1: '', cat2: '', internals: '',
       cat1Avg: '', cat2Avg: '', internalAvg: '',
       maxInt: '', minInt: '', classSize: '65',
       extSlider: 60,
+      selectedGradeCode: null,
       setGradeField: (field, value) => set({ [field]: value } as Partial<Store>),
       setExtSlider: (value) => set({ extSlider: value }),
+      setSelectedGradeCode: (code) => set({ selectedGradeCode: code }),
       resetGrade: () => set({
         cat1: '', cat2: '', internals: '',
         cat1Avg: '', cat2Avg: '', internalAvg: '',
         maxInt: '', minInt: '', classSize: '65', extSlider: 60,
+        selectedGradeCode: null,
       }),
+
+      // ── VTOP (not persisted via partialize) ───────────────────────────────
+      vtopData: null,
+      vtopConnected: false,
+      vtopLoading: false,
+      vtopError: null,
+      connectVtop: (data) => set({ vtopData: data, vtopConnected: true, vtopError: null, vtopLoading: false }),
+      setVtopLoading: (v) => set({ vtopLoading: v }),
+      setVtopError: (v) => set({ vtopError: v, vtopLoading: false }),
+      disconnectVtop: () => set({ vtopData: null, vtopConnected: false, vtopError: null }),
     }),
-    { name: 'vit-calc-store' },
+    {
+      name: 'vit-calc-store',
+      partialize: (state) => ({
+        rows: state.rows,
+        selectedSemId: state.selectedSemId,
+        creditsDone: state.creditsDone,
+        cgpaSoFar: state.cgpaSoFar,
+        creditsSem: state.creditsSem,
+        gpaSem: state.gpaSem,
+        targetCgpa: state.targetCgpa,
+        cat1: state.cat1,
+        cat2: state.cat2,
+        internals: state.internals,
+        cat1Avg: state.cat1Avg,
+        cat2Avg: state.cat2Avg,
+        internalAvg: state.internalAvg,
+        maxInt: state.maxInt,
+        minInt: state.minInt,
+        classSize: state.classSize,
+        extSlider: state.extSlider,
+        selectedGradeCode: state.selectedGradeCode,
+      }),
+    },
   ),
 )
