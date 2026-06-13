@@ -8,6 +8,7 @@ import { Calculator, TrendingUp, Target, BarChart3, ArrowLeft } from 'lucide-rea
 import { cn } from '@/lib/utils'
 import { NAV_ITEMS, type TabId } from '@/lib/constants'
 import { VtopConnect, VtopStatusBadge } from '@/components/vtop-connect'
+import { ThemeToggle } from '@/components/theme-provider'
 
 const ICONS = { Calculator, TrendingUp, Target, BarChart3 }
 
@@ -19,15 +20,15 @@ function Sidebar({ active }: { active: TabId }) {
     <>
       <aside className="hidden md:flex fixed left-0 top-0 bottom-0 w-56 flex-col border-r border-border bg-sidebar z-20">
         {/* Logo */}
-        <div className="flex items-center gap-2 px-5 py-5 border-b border-border/60">
-          <div className="w-7 h-7 rounded-lg bg-primary/20 border border-primary/30 flex items-center justify-center">
-            <span className="text-primary text-xs font-black">G</span>
+        <div className="flex items-center gap-2.5 px-5 py-4 border-b border-border/60">
+          <div className="w-6 h-6 rounded-md bg-primary flex items-center justify-center shrink-0">
+            <span className="text-primary-foreground text-[10px] font-black">G</span>
           </div>
-          <span className="font-bold text-sm tracking-tight">VIT GPA</span>
+          <span className="font-bold text-sm tracking-tight">VITGPA</span>
         </div>
 
         {/* Nav */}
-        <nav className="flex-1 p-3 space-y-0.5">
+        <nav className="flex-1 p-3 space-y-0.5 overflow-y-auto">
           {NAV_ITEMS.map(item => {
             const Icon = ICONS[item.icon as keyof typeof ICONS]
             const isActive = active === item.id
@@ -52,12 +53,15 @@ function Sidebar({ active }: { active: TabId }) {
         {/* Footer */}
         <div className="p-3 border-t border-border/60 space-y-2">
           <VtopStatusBadge onClick={() => setShowVtop(true)} />
-          <Link
-            href="/"
-            className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs text-muted-foreground hover:text-foreground transition-colors"
-          >
-            <ArrowLeft className="size-3.5" /> Back to home
-          </Link>
+          <div className="flex items-center gap-2">
+            <Link
+              href="/"
+              className="flex-1 flex items-center gap-2 px-3 py-2 rounded-xl text-xs text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <ArrowLeft className="size-3.5 shrink-0" /> Back to home
+            </Link>
+            <ThemeToggle />
+          </div>
         </div>
       </aside>
 
@@ -114,15 +118,16 @@ function AppShell({ children }: { children: React.ReactNode }) {
       {/* Content */}
       <main className="md:pl-56 pb-20 md:pb-0 min-h-screen">
         {/* Header */}
-        <header className="sticky top-0 z-10 flex h-14 items-center border-b border-border/60 bg-background/80 backdrop-blur-md px-4 md:px-6">
-          <div className="flex items-center gap-2">
-            <span className="font-semibold text-sm">
-              {NAV_ITEMS.find(n => n.id === active)?.label}
-            </span>
-          </div>
+        <header className="sticky top-0 z-10 flex h-14 items-center border-b border-border/60 bg-background/90 backdrop-blur-md px-4 md:px-6">
+          <span className="font-semibold text-sm">
+            {NAV_ITEMS.find(n => n.id === active)?.label}
+          </span>
+
           <div className="ml-auto flex items-center gap-2">
-            <span className="text-xs text-muted-foreground hidden sm:block">VIT Chennai · 10-pt scale</span>
-            {/* Mobile connect button */}
+            <span className="text-xs text-muted-foreground hidden sm:block">
+              VIT Chennai · 10-pt scale
+            </span>
+            <ThemeToggle />
             <button
               onClick={() => setShowVtop(true)}
               className="md:hidden flex items-center gap-1.5 rounded-lg border border-border/60 bg-secondary/30 px-2.5 py-1.5 text-[11px] font-medium text-muted-foreground hover:text-foreground transition-colors"

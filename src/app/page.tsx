@@ -2,192 +2,184 @@
 
 import Link from 'next/link'
 import { motion } from 'framer-motion'
-import { ArrowRight, Calculator, TrendingUp, Target, BarChart3, Zap, Plug } from 'lucide-react'
+import { ArrowRight, Calculator, TrendingUp, Target, BarChart3, Plug } from 'lucide-react'
+import { ThemeToggle } from '@/components/theme-provider'
 
-const FEATURES = [
+// Sharp, purposeful entrance — no bouncy or springy motion
+const up = (delay = 0) => ({
+  initial: { opacity: 0, y: 10 },
+  animate: { opacity: 1, y: 0 },
+  transition: { duration: 0.3, ease: 'easeOut' as const, delay },
+})
+
+const TOOLS = [
   {
     icon: Calculator,
     title: 'GPA Calculator',
-    desc: 'Live semester GPA. Add courses, pick grades — instant result.',
+    desc: 'Add courses, pick grades, get your semester GPA live.',
     tab: 'gpa',
-    accent: '#60a5fa',
-    border: 'hover:border-blue-700/70',
-    glow: 'hover:shadow-blue-950/60',
-    iconBg: 'bg-blue-950/60 border-blue-800/40',
-    iconColor: 'text-blue-400',
-    tag: 'text-blue-400',
   },
   {
     icon: TrendingUp,
     title: 'CGPA Calculator',
-    desc: 'Combine semesters. Target your CGPA and know what you need.',
+    desc: 'Combine semesters. Know exactly what you need to hit your target.',
     tab: 'cgpa',
-    accent: '#a78bfa',
-    border: 'hover:border-violet-700/70',
-    glow: 'hover:shadow-violet-950/60',
-    iconBg: 'bg-violet-950/60 border-violet-800/40',
-    iconColor: 'text-violet-400',
-    tag: 'text-violet-400',
   },
   {
     icon: Target,
     title: 'Grade Predictor',
-    desc: "VIT's relative grading bell curve — predict your grade before results.",
+    desc: "VIT's bell-curve grading. Predict your grade before results drop.",
     tab: 'grade',
-    accent: '#34d399',
-    border: 'hover:border-emerald-700/70',
-    glow: 'hover:shadow-emerald-950/60',
-    iconBg: 'bg-emerald-950/60 border-emerald-800/40',
-    iconColor: 'text-emerald-400',
-    tag: 'text-emerald-400',
   },
   {
     icon: BarChart3,
     title: 'Analytics',
-    desc: 'GPA trends and semester history, visualised. Powered by VTOP.',
+    desc: 'GPA trends and semester history pulled directly from VTOP.',
     tab: 'analytics',
-    accent: '#fb923c',
-    border: 'hover:border-orange-700/70',
-    glow: 'hover:shadow-orange-950/60',
-    iconBg: 'bg-orange-950/60 border-orange-800/40',
-    iconColor: 'text-orange-400',
-    tag: 'text-orange-400',
   },
 ]
 
 export default function LandingPage() {
   return (
-    <div className="h-screen overflow-hidden flex flex-col bg-background select-none">
+    <div className="h-screen overflow-hidden flex flex-col bg-background">
 
-      {/* Ambient glow */}
-      <div className="pointer-events-none fixed inset-0 z-0">
-        <div className="absolute top-[-10%] left-1/2 -translate-x-1/2 w-[700px] h-[500px] rounded-full bg-primary/[0.07] blur-[140px]" />
-        <div className="absolute bottom-0 left-1/4 w-[300px] h-[300px] rounded-full bg-blue-600/[0.04] blur-[100px]" />
-        <div className="absolute bottom-0 right-1/4 w-[300px] h-[300px] rounded-full bg-violet-600/[0.04] blur-[100px]" />
-      </div>
+      {/* Subtle dot-grid — adapts to light and dark via CSS var */}
+      <div
+        aria-hidden
+        className="pointer-events-none fixed inset-0 z-0"
+        style={{
+          backgroundImage: 'radial-gradient(circle, var(--border) 1px, transparent 1px)',
+          backgroundSize: '28px 28px',
+          opacity: 0.55,
+        }}
+      />
 
-      {/* Nav */}
-      <nav className="relative z-10 flex items-center justify-between px-8 py-4 border-b border-border/30">
-        <span className="text-base font-black tracking-tighter">
-          VIT<span className="text-primary">GPA</span>
-        </span>
-        <Link
-          href="/app"
-          className="flex items-center gap-1.5 rounded-lg bg-primary/10 border border-primary/25 px-3 py-1.5 text-xs font-semibold text-primary hover:bg-primary/20 transition-colors"
-        >
-          Open App <ArrowRight className="size-3" />
-        </Link>
+      {/* ── Nav ──────────────────────────────────────────────────────────── */}
+      <nav className="relative z-10 flex items-center justify-between px-6 sm:px-8 h-14 border-b border-border/60 shrink-0">
+        <div className="flex items-center gap-2.5">
+          <div className="w-6 h-6 rounded-md bg-primary flex items-center justify-center shrink-0">
+            <span className="text-primary-foreground text-[10px] font-black tracking-tighter">G</span>
+          </div>
+          <span className="text-sm font-bold tracking-tight">VITGPA</span>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <ThemeToggle />
+          <Link
+            href="/app"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-border/70 bg-secondary/40 px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-secondary transition-colors"
+          >
+            Open App <ArrowRight className="size-3 opacity-60" />
+          </Link>
+        </div>
       </nav>
 
-      {/* Hero */}
-      <section className="relative z-10 flex-1 flex flex-col items-center justify-center px-6 text-center gap-7 pt-2">
+      {/* ── Hero ─────────────────────────────────────────────────────────── */}
+      <section className="relative z-10 flex-1 flex flex-col items-center justify-center px-6 text-center min-h-0">
 
-        {/* Pill badges */}
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.4 }}
-          className="flex items-center justify-center gap-2 flex-wrap"
-        >
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-border/50 bg-secondary/20 px-3 py-1 text-[11px] text-muted-foreground">
-            VIT Chennai · 10-point scale
+        {/* Badge */}
+        <motion.div {...up(0)}>
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1 text-[11px] text-muted-foreground mb-6 shadow-sm">
+            Built for VIT Chennai · 10-point grading scale
           </span>
-          <Link
-            href="/app"
-            className="inline-flex items-center gap-1.5 rounded-full border border-primary/40 bg-primary/10 px-3 py-1 text-[11px] font-semibold text-primary hover:bg-primary/20 transition-colors"
-          >
-            <Plug className="size-2.5" />
-            Connect to VTOP for auto-fill
-          </Link>
         </motion.div>
 
-        {/* Logo */}
-        <motion.div
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, delay: 0.05 }}
-        >
-          <h1 className="text-8xl sm:text-9xl font-black tracking-tighter leading-none">
-            <span
-              className="bg-clip-text text-transparent"
-              style={{ backgroundImage: 'linear-gradient(135deg, #fff 30%, rgba(255,255,255,0.45) 100%)' }}
-            >
-              VIT
-            </span>
-            <span className="text-primary">GPA</span>
-          </h1>
-        </motion.div>
-
-        {/* Tagline */}
-        <motion.p
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.4, delay: 0.15 }}
-          className="text-sm text-muted-foreground max-w-xs mx-auto leading-relaxed"
-        >
-          Calculate. Predict. Analyse.
+        {/* Headline */}
+        <motion.h1 {...up(0.06)} className="text-5xl sm:text-6xl lg:text-7xl font-black tracking-tighter leading-[1.02] mb-4">
+          The GPA toolkit
           <br />
-          Your complete VIT grade toolkit.
+          <span className="text-primary">for VIT.</span>
+        </motion.h1>
+
+        {/* Sub-headline */}
+        <motion.p {...up(0.12)} className="text-sm text-muted-foreground max-w-[340px] mx-auto leading-relaxed mb-7">
+          Calculate GPA and CGPA, predict grades with VIT&apos;s relative
+          grading formula, and connect VTOP for automatic data fill.
         </motion.p>
 
-        {/* CTA */}
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.4, delay: 0.22 }}
-          className="flex items-center gap-3"
-        >
+        {/* CTAs */}
+        <motion.div {...up(0.18)} className="flex items-center gap-3 mb-6 flex-wrap justify-center">
           <Link
             href="/app"
-            className="group inline-flex items-center gap-2 rounded-xl bg-primary px-7 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 transition-colors shadow-lg shadow-primary/20"
+            className="group inline-flex items-center gap-2 rounded-xl bg-primary px-6 py-2.5 text-sm font-semibold text-primary-foreground hover:opacity-90 active:scale-[0.98] transition-all shadow-sm shadow-primary/20"
           >
-            Start Calculating
-            <ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" />
+            Open Calculator
+            <ArrowRight className="size-3.5 transition-transform group-hover:translate-x-0.5" />
           </Link>
           <Link
             href="/app"
-            className="inline-flex items-center gap-1.5 rounded-xl border border-border/50 px-5 py-2.5 text-sm text-muted-foreground hover:text-foreground hover:border-border transition-colors"
+            className="group inline-flex items-center gap-2 rounded-xl border border-border px-5 py-2.5 text-sm font-medium text-muted-foreground hover:text-foreground hover:border-foreground/25 hover:bg-secondary/50 active:scale-[0.98] transition-all"
           >
-            <Zap className="size-3.5" />
+            <Plug className="size-3.5" />
             Connect VTOP
           </Link>
         </motion.div>
+
+        {/* Trust line */}
+        <motion.p {...up(0.23)} className="text-[11px] text-muted-foreground/60 flex items-center gap-2">
+          <span>No login required</span>
+          <span aria-hidden className="opacity-40">·</span>
+          <span>Works offline</span>
+          <span aria-hidden className="opacity-40">·</span>
+          <span>VTOP auto-fill</span>
+          <span aria-hidden className="opacity-40">·</span>
+          <span>Open source</span>
+        </motion.p>
       </section>
 
-      {/* Feature cards */}
-      <section className="relative z-10 px-5 pb-5">
-        <div className="max-w-4xl mx-auto grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-          {FEATURES.map((f, i) => (
+      {/* ── Tools ────────────────────────────────────────────────────────── */}
+      <section className="relative z-10 px-5 sm:px-8 pb-4 shrink-0">
+        {/* Section label */}
+        <div className="flex items-center gap-3 mb-3">
+          <span className="text-[9px] font-bold tracking-[0.14em] uppercase text-muted-foreground/50 shrink-0">
+            Tools
+          </span>
+          <div className="flex-1 h-px bg-border/70" />
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 max-w-4xl mx-auto">
+          {TOOLS.map((t, i) => (
             <motion.div
-              key={f.tab}
-              initial={{ opacity: 0, y: 18 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.4, delay: 0.28 + i * 0.07 }}
+              key={t.tab}
+              {...up(0.28 + i * 0.055)}
+              whileHover={{ y: -2, transition: { duration: 0.15 } }}
+              className="h-full"
             >
               <Link
-                href={`/app?tab=${f.tab}`}
-                className={`group flex flex-col gap-3 rounded-2xl border border-border/50 bg-card/60 backdrop-blur-sm p-4 transition-all duration-200 hover:shadow-xl ${f.border} ${f.glow} cursor-pointer`}
+                href={`/app?tab=${t.tab}`}
+                className={[
+                  'group flex flex-col gap-2.5 h-full rounded-xl p-4 cursor-pointer',
+                  'border border-border bg-card/80 backdrop-blur-sm',
+                  'hover:border-primary/35 hover:bg-card',
+                  'hover:shadow-[0_2px_16px_-4px_oklch(var(--primary)/0.12)]',
+                  'transition-all duration-200',
+                ].join(' ')}
               >
-                <div className={`w-8 h-8 rounded-xl border flex items-center justify-center ${f.iconBg}`}>
-                  <f.icon className={`size-3.5 ${f.iconColor}`} />
+                <div className="w-7 h-7 rounded-lg bg-secondary border border-border/80 flex items-center justify-center group-hover:bg-primary/10 group-hover:border-primary/25 transition-colors">
+                  <t.icon className="size-3.5 text-muted-foreground group-hover:text-primary transition-colors" />
                 </div>
-                <div className="space-y-1">
-                  <p className="text-xs font-semibold leading-tight">{f.title}</p>
-                  <p className="text-[10px] text-muted-foreground leading-relaxed">{f.desc}</p>
+
+                <div className="flex-1">
+                  <p className="text-xs font-semibold mb-0.5 group-hover:text-foreground transition-colors">
+                    {t.title}
+                  </p>
+                  <p className="text-[10px] text-muted-foreground leading-relaxed">{t.desc}</p>
                 </div>
-                <p className={`text-[10px] font-semibold flex items-center gap-1 ${f.tag}`}>
-                  Open <ArrowRight className="size-2.5 transition-transform group-hover:translate-x-0.5" />
-                </p>
+
+                <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-muted-foreground/50 group-hover:text-primary transition-colors">
+                  Open
+                  <ArrowRight className="size-2.5 transition-transform group-hover:translate-x-0.5" />
+                </span>
               </Link>
             </motion.div>
           ))}
         </div>
       </section>
 
-      {/* Footer */}
-      <footer className="relative z-10 border-t border-border/30 px-8 py-3 flex items-center justify-between">
-        <span className="text-[10px] text-muted-foreground/60">VITGPA — unofficial, open-source</span>
-        <span className="text-[10px] text-muted-foreground/60">Not affiliated with VIT Chennai</span>
+      {/* ── Footer ───────────────────────────────────────────────────────── */}
+      <footer className="relative z-10 border-t border-border/50 px-8 h-10 flex items-center justify-between shrink-0">
+        <span className="text-[10px] text-muted-foreground/45">VITGPA — unofficial, open-source</span>
+        <span className="text-[10px] text-muted-foreground/45">Not affiliated with VIT Chennai</span>
       </footer>
 
     </div>
