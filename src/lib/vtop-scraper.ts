@@ -1,6 +1,4 @@
 import * as cheerio from 'cheerio'
-// undici is bundled with Node.js 18+ — use it directly to bypass VTOP's
-// incomplete TLS certificate chain (UNABLE_TO_VERIFY_LEAF_SIGNATURE)
 import { Agent, fetch as undiciFetch } from 'undici'
 import type {
   VtopCourse, VtopCourseMarks, VtopData,
@@ -10,29 +8,7 @@ import type {
 const BASE = 'https://vtopcc.vit.ac.in/vtop'
 const UA   = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'
 
-// VTOP has an incomplete TLS cert chain so we must skip cert validation
 const tlsAgent = new Agent({ connect: { rejectUnauthorized: false } })
-
-// ── Session store ─────────────────────────────────────────────────────────────
-// Attached to `global` so it survives Turbopack hot-reloads between requests
-type Session = { cookies: string; csrf: string; lastUsed: number }
-
-declare global {
-  // eslint-disable-next-line no-var
-  var __vtopSessions: Map<string, Session> | undefined
-}
-
-const sessions: Map<string, Session> = globalThis.__vtopSessions ?? new Map()
-globalThis.__vtopSessions = sessions
-
-function cleanup() {
-  const cutoff = Date.now() - 3_600_000
-  for (const [k, s] of sessions) if (s.lastUsed < cutoff) sessions.delete(k)
-}
-
-function genId() {
-  return Math.random().toString(36).slice(2, 9) + Date.now().toString(36)
-}
 
 // ── Cookie merging ────────────────────────────────────────────────────────────
 function mergeCookies(existing: string, newHeader: string | null): string {
@@ -51,7 +27,7 @@ function mergeCookies(existing: string, newHeader: string | null): string {
   return Array.from(jar).map(([k, v]) => `${k}=${v}`).join('; ')
 }
 
-// ── HTTP helpers (all via undici to bypass cert issues) ───────────────────────
+// ── HTTP helpers ──────────────────────────────────────────────────────────────
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type UndiciInit = any
 
@@ -102,13 +78,21 @@ function parseSemesters($: ReturnType<typeof cheerio.load>): VtopSemester[] {
   return sems
 }
 
-// VTOP timetable: courses live inside #studentDetailsList > table
-// Headers use <th>; credits column says "L T P J C" (last digit = total credits)
+function courseTypeToVtop(typeStr: string): VtopCourse['type'] {
+  const t = typeStr.toUpperCase().trim()
+  if (['ELA', 'EL', 'LAB'].includes(t)) return 'LAB'
+  if (['PBL', 'PROJECT'].includes(t) || t.includes('PROJECT')) return 'PROJECT'
+  return 'THEORY'
+}
+
+function isNonGradedType(typeStr: string, code: string): boolean {
+  const t = typeStr.toUpperCase().trim()
+  return t === 'SS' || t === 'ENG' || code.toUpperCase().startsWith('VITOL')
+}
+
 function parseCourseTable($: ReturnType<typeof cheerio.load>): VtopCourse[] {
   const courses: VtopCourse[] = []
-
-  // Try scoped to #studentDetailsList first (android repo selector), then fall back to any table
-  const root = $('#studentDetailsList').length > 0 ? $('#studentDetailsList') : $.root()
+  const root = $('#studentDetailsList').length > 0 ? $('#studentDetailsList') : $('body')
 
   root.find('table').each((_, table) => {
     const hdrs = $(table).find('th').map((_, th) => $(th).text().trim().toLowerCase()).get()
@@ -116,50 +100,51 @@ function parseCourseTable($: ReturnType<typeof cheerio.load>): VtopCourse[] {
     if (!hdrs.some(h => h.includes('course') || h.includes('code'))) return
 
     const idx = {
-      // android repo: exact "course" heading = course name; "code" = course code
       code:    hdrs.findIndex(h => h.includes('code')),
       name:    hdrs.findIndex(h => h === 'course' || (h.includes('course') && !h.includes('type') && !h.includes('code') && !h.includes('title'))) >= 0
                ? hdrs.findIndex(h => h === 'course' || (h.includes('course') && !h.includes('type') && !h.includes('code') && !h.includes('title')))
                : hdrs.findIndex(h => h.includes('title')),
       type:    hdrs.findIndex(h => h.includes('type')),
-      // android repo: credits header is "l t p j c"; also accept plain "credit"
       credits: hdrs.findIndex(h => h.includes('l t p j c') || h.includes('ltpjc') || h === 'credit' || h === 'credits'),
       faculty: hdrs.findIndex(h => h.includes('faculty') || h.includes('staff') || h.includes('lecturer')),
     }
-    // Fall back: if neither code nor name found, skip
     if (idx.code < 0 && idx.name < 0) return
 
     $(table).find('tr').slice(1).each((_, row) => {
       const cells = $(row).find('td').map((_, td) => $(td).text().trim()).get()
       if (cells.length < 3) return
+
       const code    = idx.code >= 0 ? cells[idx.code] : ''
       const name    = idx.name >= 0 ? cells[idx.name] : (idx.code >= 0 ? cells[idx.code] : '')
-      const typeStr = (idx.type >= 0 ? cells[idx.type] : '').toUpperCase()
+      const typeStr = (idx.type >= 0 ? cells[idx.type] : '').toUpperCase().trim()
 
-      // "L T P J C" value like "4 0 0 0 4" → last number is total credits
+      if (isNonGradedType(typeStr, code)) return
+
       let creds = 0
       if (idx.credits >= 0) {
         const credCell = cells[idx.credits] ?? ''
         const nums = credCell.split(/\s+/).map(Number).filter(n => !isNaN(n) && n >= 0)
-        creds = nums[nums.length - 1] ?? 0  // last = C (credit)
+        creds = nums[nums.length - 1] ?? 0
         if (creds === 0) creds = nums.find(n => n > 0) ?? 0
       }
 
       const faculty = idx.faculty >= 0 ? cells[idx.faculty] : ''
       if ((!code && !name) || creds <= 0) return
-      let type: VtopCourse['type'] = 'THEORY'
-      if (typeStr.includes('LAB') || typeStr === 'L') type = 'LAB'
-      else if (typeStr.includes('PROJECT') || typeStr === 'P') type = 'PROJECT'
-      courses.push({ code: code || name, name: name || code, type, credits: creds, faculty })
+
+      courses.push({
+        code: code || name,
+        name: name || code,
+        type: courseTypeToVtop(typeStr),
+        credits: creds,
+        faculty,
+      })
     })
 
-    if (courses.length > 0) return false  // stop at first matching table
+    if (courses.length > 0) return false
   })
   return courses
 }
 
-// android repo getCreditsCGPA(): looks for a table whose first-row <td>[0] contains "credit",
-// then finds "earned" and "cgpa" columns; values are in row[1] at same column indices.
 function parseCGPAFromPage($: ReturnType<typeof cheerio.load>): { cgpa: number; totalCredits: number } {
   let cgpa = 0, totalCredits = 0
   $('table').each((_, table) => {
@@ -186,13 +171,11 @@ function parseCGPAFromPage($: ReturnType<typeof cheerio.load>): { cgpa: number; 
       const v = parseFloat($(allTds[cgpaIdx + n]).text().trim())
       if (!isNaN(v) && v > 0) cgpa = v
     }
-    return false  // break
+    return false
   })
   return { cgpa, totalCredits }
 }
 
-// Maps a VTOP exam month string ("Jan-2023", "May-2024") to a semester label.
-// VIT exam schedule: Jan/Feb = end of Fall sem; May/Jun = end of Winter sem; Nov/Dec = end of Fall sem.
 function examMonthToSemLabel(examMonth: string): string {
   const parts = examMonth.split('-')
   const month = (parts[0] ?? '').toLowerCase().slice(0, 3)
@@ -200,20 +183,14 @@ function examMonthToSemLabel(examMonth: string): string {
   if (!year) return examMonth
   const yy   = String(year).slice(2)
   const prev  = year - 1
-  const prevyy = String(prev).slice(2)
   if (['jan', 'feb', 'mar'].includes(month)) return `Fall Semester ${prev}-${yy}`
   if (['apr', 'may', 'jun'].includes(month)) return `Winter Semester ${prev}-${yy}`
-  if (['jul', 'aug', 'sep'].includes(month)) return `Fall Semester ${year}-${String(year + 1).slice(2)}`
-  if (['oct', 'nov', 'dec'].includes(month)) return `Fall Semester ${year}-${String(year + 1).slice(2)}`
+  if (['jul', 'aug', 'sep', 'oct', 'nov', 'dec'].includes(month)) return `Fall Semester ${year}-${String(year + 1).slice(2)}`
   return `Semester ${examMonth}`
 }
 
-// The VTOP grade history page is a FLAT table — all courses from all semesters in one table
-// with NO semester separator rows. Hidden per-course detail rows exist as td[colspan] rows
-// but must be ignored. We group courses by the "Exam Month" column to reconstruct semesters.
 function parseGradeHistory($: ReturnType<typeof cheerio.load>): VtopGradeHistory[] {
-  // Find column indices from the tableHeader row that contains "Course Code"
-  let codeIdx = 1, nameIdx = 2, creditsIdx = 4, gradeIdx = 5, examMonthIdx = 6
+  let codeIdx = 1, nameIdx = 2, creditsIdx = 4, gradeIdx = 5, examMonthIdx = 6, typeIdx = -1
 
   $('table tr.tableHeader').each((_, row) => {
     const tds = $(row).find('td')
@@ -222,33 +199,36 @@ function parseGradeHistory($: ReturnType<typeof cheerio.load>): VtopGradeHistory
     if (!txts.some(t => t.includes('course code'))) return
     tds.each((i, td) => {
       const t = $(td).text().trim().toLowerCase()
-      if (t.includes('course code'))                         codeIdx      = i
-      else if (t.includes('course title') || t === 'title') nameIdx      = i
-      else if (t === 'credits' || t.includes('credit'))      creditsIdx   = i
-      else if (t === 'grade')                                gradeIdx     = i
-      else if (t.includes('exam month'))                     examMonthIdx = i
+      if (t.includes('course code'))                              codeIdx      = i
+      else if (t.includes('course title') || t === 'title')      nameIdx      = i
+      else if (t === 'credits' || t.includes('credit'))           creditsIdx   = i
+      else if (t === 'grade')                                     gradeIdx     = i
+      else if (t.includes('exam month'))                          examMonthIdx = i
+      else if (t.includes('course type') || t === 'type' || t.includes('crs') && t.includes('type')) typeIdx = i
     })
-    return false  // stop at first matching header row
+    return false
   })
 
-  // Walk tableContent rows only — this skips header rows AND avoids hidden-detail colspan rows
-  // (those have class="tableContent" but cells.length === 1 since a single colspan td)
+  const GP: Record<string, number> = { S: 10, A: 9, B: 8, C: 7, D: 6, E: 5, F: 0, N: 0 }
   const semGroups = new Map<string, VtopGradeHistory>()
 
   $('table tr.tableContent').each((_, row) => {
     const cells = $(row).find('td').map((_, td) => $(td).text().trim()).get()
-    if (cells.length <= gradeIdx) return  // hidden detail rows have only 1 cell
+    if (cells.length <= gradeIdx) return
 
-    const code      = (cells[codeIdx]      ?? '').trim()
-    const name      = (cells[nameIdx]      ?? '').trim()
-    const credStr   = (cells[creditsIdx]   ?? '').trim()
-    const grade     = (cells[gradeIdx]     ?? '').trim()
-    const examMonth = (cells[examMonthIdx] ?? '').trim()
+    const code       = (cells[codeIdx]      ?? '').trim()
+    const name       = (cells[nameIdx]      ?? '').trim()
+    const credStr    = (cells[creditsIdx]   ?? '').trim()
+    const grade      = (cells[gradeIdx]     ?? '').trim()
+    const examMonth  = (cells[examMonthIdx] ?? '').trim()
+    const courseType = (typeIdx >= 0 ? cells[typeIdx] : '').trim().toUpperCase()
 
-    if (!code || !/^[A-Z]{2,5}\d{3,5}[A-Z]?$/.test(code)) return  // not a real course code
+    if (!code || !/^[A-Z]{2,5}\d{3,5}[A-Z]?$/.test(code)) return
+    if (isNonGradedType(courseType, code)) return
+
     const credits = parseFloat(credStr)
-    if (isNaN(credits) || credits <= 0) return  // sub-component row (ETH/ELA) has no credits
-    if (!grade || grade === '-') return          // sub-component rows have dash grade
+    if (isNaN(credits) || credits <= 0) return
+    if (!grade || grade === '-') return
     const gradeChar = grade.charAt(0)
     if (!/^[SABCDEFN]/.test(gradeChar)) return
 
@@ -257,20 +237,15 @@ function parseGradeHistory($: ReturnType<typeof cheerio.load>): VtopGradeHistory
 
     if (!semGroups.has(semId)) semGroups.set(semId, { semId, semLabel, gpa: 0, credits: 0, courses: [] })
     const group = semGroups.get(semId)!
-    group.courses.push({ code, name, credits: Math.round(credits), grade: gradeChar })
+    group.courses.push({ code, name, credits: Math.round(credits), grade: gradeChar, courseType: courseType || undefined })
     group.credits += Math.round(credits)
   })
 
-  // Compute SGPA per semester from the courses we collected
-  const GP: Record<string, number> = { S: 10, A: 9, B: 8, C: 7, D: 6, E: 5, F: 0 }
   const result = Array.from(semGroups.values())
   for (const sem of result) {
     const tw = sem.courses.reduce((s, c) => s + c.credits * (GP[c.grade] ?? 0), 0)
     if (sem.credits > 0) sem.gpa = Math.round((tw / sem.credits) * 100) / 100
   }
-
-  // Entries were inserted newest-first (exam months in descending order in VTOP);
-  // reverse so oldest semester is first.
   return result.reverse()
 }
 
@@ -281,27 +256,42 @@ function parseMarks($: ReturnType<typeof cheerio.load>): VtopCourseMarks[] {
   $('table tr').each((_, row) => {
     const cells = $(row).find('td').map((_, td) => $(td).text().trim()).get()
 
-    // Course header (wide colspan cell with a course code in it)
     if ($(row).find('td[colspan]').length > 0 || cells.length === 1) {
       const txt = (cells[0] || $(row).text()).trim()
-      const m = txt.match(/([A-Z]{2,4}\d{3,4}[A-Z]?)/i)
+      const m = txt.match(/([A-Z]{2,5}\d{3,5}[A-Z]?)/i)
       if (m) {
         curCode = m[1].toUpperCase()
-        if (!byCode.has(curCode)) byCode.set(curCode, { courseCode: curCode, courseName: txt.replace(m[1], '').replace(/[-–:]/g, '').trim() })
+        if (!byCode.has(curCode)) byCode.set(curCode, {
+          courseCode: curCode,
+          courseName: txt.replace(m[1], '').replace(/[-–:]/g, '').trim(),
+        })
       }
       return
     }
 
     if (!curCode || cells.length < 2) return
     const testName = cells[0].toUpperCase()
-    const numVals  = cells.slice(1).map(parseFloat).filter(n => !isNaN(n) && n >= 0)
+    // Skip average/total rows — they pollute lab internal accumulation
+    if (testName.includes('AVERAGE') || testName === 'TOTAL' || testName === 'GRAND TOTAL' || testName === 'GRADE') return
+
+    const numVals = cells.slice(1).map(parseFloat).filter(n => !isNaN(n) && n >= 0)
     if (!numVals.length) return
 
     const entry = byCode.get(curCode)!
     const score = numVals[0]
-    if ((testName.includes('CAT') || testName.includes('CYCLE')) && (testName.includes('1') || testName.endsWith('I'))) entry.cat1 = score
-    else if ((testName.includes('CAT') || testName.includes('CYCLE')) && (testName.includes('2') || testName.endsWith('II'))) entry.cat2 = score
-    else if (testName.includes('INTERNAL') || testName.startsWith('IA') || testName === 'INT') entry.internals = score
+
+    if ((testName.includes('CAT') || testName.includes('CYCLE')) && (testName.includes('1') || testName.endsWith('I') || testName.endsWith('-I'))) {
+      entry.cat1 = score
+    } else if ((testName.includes('CAT') || testName.includes('CYCLE')) && (testName.includes('2') || testName.endsWith('II') || testName.endsWith('-II'))) {
+      entry.cat2 = score
+    } else if (testName.includes('INTERNAL') || testName.startsWith('IA') || testName === 'INT') {
+      entry.internals = score
+    } else if (testName.includes('FAT') || testName.includes('FINAL ASSESSMENT')) {
+      entry.fat = score
+    } else {
+      // All other rows: accumulate as lab internal components
+      entry.labInternal = (entry.labInternal ?? 0) + score
+    }
   })
 
   return Array.from(byCode.values())
@@ -327,18 +317,13 @@ function parseProfile($: ReturnType<typeof cheerio.load>): { name: string; cgpa:
 // ── Public API ────────────────────────────────────────────────────────────────
 
 export async function fetchCaptcha(): Promise<{
-  sessionKey: string
+  sessionState: string
   captchaBase64: string | null
   isRecaptcha: boolean
-  csrf: string
 }> {
-  cleanup()
-
-  // 1. GET login page — grabs initial cookies + CSRF
   let { text: loginHtml, cookies } = await vtopGet('/login', '')
   let $ = cheerio.load(loginHtml)
 
-  // 2. Serialize #stdForm and POST to prelogin/setup (required before captcha loads)
   const stdFormData: Record<string, string> = {}
   $('#stdForm').find('input, select, textarea').each((_, el) => {
     const name = $(el).attr('name')
@@ -350,32 +335,24 @@ export async function fetchCaptcha(): Promise<{
     try {
       const setup = await vtopPost('/prelogin/setup', cookies, stdFormData)
       cookies = setup.cookies
-      // Re-fetch the login page now that setup has run — captcha image is rendered after setup
       const refreshed = await vtopGet('/login', cookies)
       cookies = refreshed.cookies
       loginHtml = refreshed.text
       $ = cheerio.load(loginHtml)
-    } catch { /* continue without setup if it fails */ }
+    } catch { /* continue if setup fails */ }
   }
 
   const csrf = (($('input[name="_csrf"]').val() ?? '') as string)
 
-  // Try multiple selectors — the captcha img may not always be inside #captchaBlock
   const captchaImgSrc = (
     ($('#captchaBlock img').first().attr('src') ?? '') ||
-    // Fallback: any inline base64 image on the page (captcha is always a data URI)
     ($('img[src^="data:image"]').first().attr('src') ?? '') ||
-    // Fallback: img with height attribute (VIT uses height="325" on captcha img)
     ($('img[height]').first().attr('src') ?? '')
   ).trim()
 
-  // True reCaptcha: the interactive Google widget div must exist AND no image captcha present.
-  // Note: VTOP may include the reCaptcha *script* even on image-captcha pages — don't use
-  // loginHtml.includes('recaptcha') because that's always true on newer VTOP builds.
   const hasRecaptchaWidget = $('[class*="g-recaptcha"]').length > 0 || $('[data-sitekey]').length > 0
   const isRecaptcha = !captchaImgSrc && hasRecaptchaWidget
 
-  // Captcha image is inside #captchaBlock (exact selector: $('#captchaBlock img').get(0).src)
   let captchaBase64: string | null = null
   if (captchaImgSrc) {
     if (captchaImgSrc.startsWith('data:')) {
@@ -393,36 +370,42 @@ export async function fetchCaptcha(): Promise<{
     }
   }
 
-  const key = genId()
-  sessions.set(key, { cookies, csrf, lastUsed: Date.now() })
-  return { sessionKey: key, captchaBase64, isRecaptcha, csrf }
+  // Encode pre-login session state as opaque base64 blob — sent to client,
+  // returned on the login request so no server-side session store is needed.
+  const sessionState = Buffer.from(JSON.stringify({ cookies, csrf })).toString('base64')
+  return { sessionState, captchaBase64, isRecaptcha }
 }
 
 export async function loginAndFetch(params: {
-  sessionKey: string
+  sessionState: string
   username: string
   password: string
   captchaAnswer: string
 }): Promise<VtopData> {
-  const session = sessions.get(params.sessionKey)
-  if (!session) throw new Error('Session expired — refresh the captcha and try again.')
-  session.lastUsed = Date.now()
+  let cookies: string
+  let csrf: string
+  try {
+    const decoded = JSON.parse(Buffer.from(params.sessionState, 'base64').toString()) as { cookies?: string; csrf?: string }
+    cookies = decoded.cookies ?? ''
+    csrf    = decoded.csrf ?? ''
+  } catch {
+    throw new Error('Session expired — refresh the captcha and try again.')
+  }
+  if (!cookies || !csrf) throw new Error('Session expired — refresh the captcha and try again.')
 
-  // ── Login ──────────────────────────────────────────────────────────────────
-  // VTOP sets the session cookie (JSESSIONID) on the 302 redirect response, NOT the final page.
-  // redirect: 'follow' would lose that cookie, so we use 'manual' and follow manually.
+  // VTOP sets JSESSIONID on the 302 redirect, not on the final 200. Use manual redirect.
   const loginRes = await undiciFetch(`${BASE}/login`, {
     method: 'POST',
     headers: {
       'User-Agent': UA,
       'Content-Type': 'application/x-www-form-urlencoded',
-      Cookie: session.cookies,
+      Cookie: cookies,
       Referer: `${BASE}/login`,
       Origin: 'https://vtopcc.vit.ac.in',
       Accept: 'text/html,*/*',
     },
     body: new URLSearchParams({
-      _csrf: session.csrf,
+      _csrf: csrf,
       username: params.username,
       password: params.password,
       captchaStr: params.captchaAnswer,
@@ -432,16 +415,12 @@ export async function loginAndFetch(params: {
     redirect: 'manual',
   } as UndiciInit)
 
-  // Capture cookies from the login response (may be the 302 redirect response)
-  let cookies = mergeCookies(session.cookies, loginRes.headers.get('set-cookie'))
-  console.log('[VTOP] login status:', loginRes.status, '| cookies:', cookies.slice(0, 400))
+  cookies = mergeCookies(cookies, loginRes.headers.get('set-cookie'))
 
   let loginText: string
   if (loginRes.status >= 300 && loginRes.status < 400) {
-    // VTOP redirected — follow manually so we keep the 302 cookies
     const location = loginRes.headers.get('location') ?? ''
     const fullUrl  = location.startsWith('http') ? location : `https://vtopcc.vit.ac.in${location}`
-    console.log('[VTOP] login redirect ->', fullUrl)
     const followed = await vtopGet(fullUrl.replace('https://vtopcc.vit.ac.in/vtop', ''), cookies)
     cookies   = followed.cookies
     loginText = followed.text
@@ -450,13 +429,9 @@ export async function loginAndFetch(params: {
   }
 
   const $l = cheerio.load(loginText)
-  console.log('[VTOP] post-login page title:', $l('title').text().trim())
-
-  // Detect failure: still on login page (captchaStr input still present) AND no authorizedIDX
   const errMsg = $l('.error-message, .alert-danger, #errorMsg, .errormesg, [class*="error"]').first().text().trim()
   const stillOnLogin = $l('input[name="captchaStr"]').length > 0 && $l('input[name="authorizedIDX"]').length === 0
   if (stillOnLogin || /invalid|wrong|incorrect|captcha|locked|maximum/i.test(errMsg)) {
-    sessions.delete(params.sessionKey)
     throw new Error(errMsg || 'Login failed — check your credentials or captcha.')
   }
 
@@ -465,7 +440,7 @@ export async function loginAndFetch(params: {
     ($l('input[name="authorizedID"]').val() as string) ||
     params.username
   )
-  const newCsrf = (($l('input[name="_csrf"]').val() as string) || session.csrf)
+  const newCsrf = (($l('input[name="_csrf"]').val() as string) || csrf)
 
   const postBase = {
     _csrf: newCsrf,
@@ -474,45 +449,36 @@ export async function loginAndFetch(params: {
     nocache: Date.now().toString(),
   }
 
-  console.log('[VTOP] authorizedID:', authorizedID, '| newCsrf len:', newCsrf.length)
-
   // ── Student profile ────────────────────────────────────────────────────────
   let name = '', cgpa = 0, totalCredits = 0
   try {
     const r = await vtopPost('/studentsRecord/StudentProfileAllView', cookies, postBase)
     cookies = r.cookies
-    console.log('[VTOP] profile HTML snippet:', r.text.slice(0, 3000))
     const prof = parseProfile(cheerio.load(r.text))
-    console.log('[VTOP] parsed profile:', prof)
     name = prof.name; cgpa = prof.cgpa; totalCredits = prof.credits
-  } catch (e) { console.error('[VTOP] profile error:', e) }
+  } catch { /* partial ok */ }
 
   // ── Grade history + CGPA ──────────────────────────────────────────────────
   let gradeHistory: VtopGradeHistory[] = []
   try {
     const r = await vtopPost('/examinations/examGradeView/StudentGradeHistory', cookies, { ...postBase, nocache: Date.now().toString() })
     cookies = r.cookies
-    console.log('[VTOP] gradeHistory HTML snippet:', r.text.slice(0, 5000))
     const $gh = cheerio.load(r.text)
     gradeHistory = parseGradeHistory($gh)
-    console.log('[VTOP] parsed gradeHistory count:', gradeHistory.length, gradeHistory.map(h => ({ sem: h.semLabel, gpa: h.gpa, courses: h.courses.length })))
 
-    // CGPA comes from the grade history page's summary table (android repo getCreditsCGPA())
     if (cgpa === 0) {
       const ghCGPA = parseCGPAFromPage($gh)
-      console.log('[VTOP] CGPA from grade history page:', ghCGPA)
       if (ghCGPA.cgpa > 0) cgpa = ghCGPA.cgpa
       if (ghCGPA.totalCredits > 0) totalCredits = ghCGPA.totalCredits
     }
 
-    // Fallback: compute CGPA from grade history if summary table parse also failed
     if (cgpa === 0 && gradeHistory.length > 0) {
-      const GP: Record<string, number> = { S: 10, A: 9, B: 8, C: 7, D: 6, E: 5, F: 0 }
+      const GP: Record<string, number> = { S: 10, A: 9, B: 8, C: 7, D: 6, E: 5, F: 0, N: 0 }
       const totalW = gradeHistory.reduce((s, h) => s + h.courses.reduce((cs, c) => cs + c.credits * (GP[c.grade] ?? 0), 0), 0)
       const totalC = gradeHistory.reduce((s, h) => s + h.credits, 0)
       if (totalC > 0) { cgpa = Math.round((totalW / totalC) * 100) / 100; totalCredits = totalC }
     }
-  } catch (e) { console.error('[VTOP] gradeHistory error:', e) }
+  } catch { /* partial ok */ }
 
   // ── Current timetable ─────────────────────────────────────────────────────
   let semesters: VtopSemester[] = []
@@ -523,15 +489,12 @@ export async function loginAndFetch(params: {
     cookies = r.cookies
     const $tt = cheerio.load(r.text)
     semesters = parseSemesters($tt)
-    console.log('[VTOP] parsed semesters:', semesters)
 
     if (semesters.length > 0) {
       const latest = semesters[0]
       const r2 = await vtopPost('/processViewTimeTable', cookies, { ...postBase, semesterSubId: latest.id, nocache: Date.now().toString() })
       cookies = r2.cookies
-      console.log('[VTOP] processViewTimeTable HTML snippet:', r2.text.slice(0, 3000))
       const parsed = parseCourseTable(cheerio.load(r2.text))
-      console.log('[VTOP] parsed courses for latest sem:', parsed.length, parsed.slice(0, 3))
       coursesBySem[latest.id] = parsed
     } else {
       const courses = parseCourseTable($tt)
@@ -541,13 +504,11 @@ export async function loginAndFetch(params: {
         coursesBySem[sid] = courses
       }
     }
-  } catch (e) { console.error('[VTOP] timetable error:', e) }
+  } catch { /* partial ok */ }
 
-  // Fill past semesters from grade history.
-  // Match grade history labels to timetable semester IDs so the same key is used everywhere.
+  // Fill past semesters from grade history
   const normLabel = (s: string) => s.toLowerCase().replace(/\s+/g, ' ').replace(/i year|ii year|iii year|iv year/gi, '').trim()
   for (const h of gradeHistory) {
-    // Try to find a matching timetable semester by normalized label
     const match = semesters.find(s => normLabel(s.label) === normLabel(h.semLabel))
     const key   = match ? match.id : h.semId
     const label = match ? match.label : h.semLabel
@@ -555,10 +516,13 @@ export async function loginAndFetch(params: {
     if (!semesters.find(s => s.id === key)) semesters.push({ id: key, label })
     if (!coursesBySem[key]) {
       coursesBySem[key] = h.courses.map(c => ({
-        code: c.code, name: c.name, type: 'THEORY' as const, credits: c.credits,
+        code: c.code,
+        name: c.name,
+        type: courseTypeToVtop(c.courseType ?? ''),
+        credits: c.credits,
       }))
     }
-    h.semId = key  // normalise history entry to use the timetable key
+    h.semId = key
   }
 
   // ── Current marks ─────────────────────────────────────────────────────────
@@ -566,9 +530,7 @@ export async function loginAndFetch(params: {
   try {
     const r = await vtopPost('/examinations/doStudentMarkView', cookies, { ...postBase, nocache: Date.now().toString() })
     currentSemMarks = parseMarks(cheerio.load(r.text))
-  } catch { /* partial data ok */ }
-
-  sessions.delete(params.sessionKey)
+  } catch { /* partial ok */ }
 
   return {
     name: name || params.username,

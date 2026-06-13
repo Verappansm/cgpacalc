@@ -53,13 +53,13 @@ export function computeGradeBands(mean: number, sigma: number): GradeBand[] {
   const e0    = snap(mean - 2.0 * sigma)
 
   return [
-    { grade: 'S', min: sMin,      max: 100,       formula: `≥ ${sMin} (μ+1.5σ, min 90%)` },
-    { grade: 'A', min: a0,        max: sMin - 1,  formula: `${a0} – ${sMin - 1}`          },
-    { grade: 'B', min: b0,        max: a0 - 1,    formula: `${b0} – ${a0 - 1}`            },
-    { grade: 'C', min: c0,        max: b0 - 1,    formula: `${c0} – ${b0 - 1}`            },
-    { grade: 'D', min: d0,        max: c0 - 1,    formula: `${d0} – ${c0 - 1}`            },
-    { grade: 'E', min: e0,        max: d0 - 1,    formula: `${e0} – ${d0 - 1}`            },
-    { grade: 'F', min: 0,         max: e0 - 1,    formula: `0 – ${e0 - 1}`                },
+    { grade: 'S', min: sMin, max: 100,      formula: `≥ ${sMin} (μ+1.5σ, min 90%)` },
+    { grade: 'A', min: a0,   max: sMin - 1, formula: `${a0} – ${sMin - 1}`          },
+    { grade: 'B', min: b0,   max: a0 - 1,   formula: `${b0} – ${a0 - 1}`            },
+    { grade: 'C', min: c0,   max: b0 - 1,   formula: `${c0} – ${b0 - 1}`            },
+    { grade: 'D', min: d0,   max: c0 - 1,   formula: `${d0} – ${c0 - 1}`            },
+    { grade: 'E', min: e0,   max: d0 - 1,   formula: `${e0} – ${d0 - 1}`            },
+    { grade: 'F', min: 0,    max: e0 - 1,   formula: `0 – ${e0 - 1}`                },
   ]
 }
 
@@ -80,25 +80,41 @@ export function generateCurvePoints(mean: number, sigma: number, steps = 400): A
   return pts
 }
 
-// d2 constant for n=60: expected range of standard normal sample ≈ 4.64
-// Source: NIST/SEMATECH e-Handbook of Statistical Methods, Table for d2
-const D2_N60 = 4.64
+// d2 (expected range of std-normal sample of size n) — NIST e-Handbook Table 6.3.2
+const D2_TABLE: [number, number][] = [
+  [2, 1.128], [3, 1.693], [4, 2.059], [5, 2.326], [6, 2.534],
+  [7, 2.704], [8, 2.847], [9, 2.970], [10, 3.078],
+  [15, 3.472], [20, 3.735], [25, 3.931], [30, 4.086],
+  [35, 4.213], [40, 4.322], [45, 4.415], [50, 4.498],
+  [55, 4.572], [60, 4.639], [65, 4.699], [70, 4.755],
+  [75, 4.806], [80, 4.854], [90, 4.939], [100, 5.015],
+  [120, 5.141], [150, 5.306], [200, 5.492],
+]
 
-// Correlation assumption between internal and external exam performance.
-// ρ=0.7 is typical for exam scores at the same institution.
-// σ_total = σ_int × √(1 + (40/60)² + 2ρ×(40/60)) with ρ=0.7
-const TOTAL_SCALE = Math.sqrt(1 + (40 / 60) ** 2 + 2 * 0.7 * (40 / 60)) // ≈ 1.542
+export function getD2(n: number): number {
+  const c = Math.max(2, Math.min(200, Math.round(n)))
+  for (let i = 0; i < D2_TABLE.length - 1; i++) {
+    const [n1, d1] = D2_TABLE[i]
+    const [n2, d2] = D2_TABLE[i + 1]
+    if (c >= n1 && c <= n2) return d1 + (d2 - d1) * ((c - n1) / (n2 - n1))
+  }
+  return D2_TABLE[D2_TABLE.length - 1][1]
+}
+
+// σ_total = σ_int × √(1 + (40/60)² + 2ρ(40/60)), ρ=0.7 internal↔FAT correlation
+const TOTAL_SCALE = Math.sqrt(1 + (40 / 60) ** 2 + 2 * 0.7 * (40 / 60))
 
 export function estimateSigma(
   maxInternal: number,
   minInternal: number,
+  n: number = 65,
 ): number {
+  const d2 = getD2(n)
   const rangeInt = Math.max(0, maxInternal - minInternal)
-  const sigmaInt = rangeInt / D2_N60
-  return Math.max(1, sigmaInt * TOTAL_SCALE)
+  return Math.max(1, (rangeInt / d2) * TOTAL_SCALE)
 }
 
-// When class range is unknown: CV = 18% of mean (typical for VIT)
+// Fallback when range unknown: CV=18% of mean (typical VIT)
 export function fallbackSigma(classTotalMean: number): number {
   return Math.max(1, classTotalMean * 0.18)
 }

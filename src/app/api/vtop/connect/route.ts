@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}))
-  const { sessionKey, username, password, captchaAnswer } = body as Record<string, string>
+  const { sessionState, username, password, captchaAnswer } = body as Record<string, string>
 
   if (!username || !password) {
     return NextResponse.json({ error: 'Username and password are required.' }, { status: 400 })
@@ -11,7 +11,7 @@ export async function POST(req: NextRequest) {
 
   try {
     const data = await loginAndFetch({
-      sessionKey: sessionKey ?? '',
+      sessionState: sessionState ?? '',
       username,
       password,
       captchaAnswer: captchaAnswer ?? '',

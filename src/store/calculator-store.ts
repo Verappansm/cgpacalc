@@ -51,13 +51,18 @@ type GradeState = {
   maxInt: string
   minInt: string
   classSize: string
-  extSlider: number
+  extSlider: number   // user's FAT marks (0-100)
+  fatAvg: string      // class FAT average out of 100 (when fatExamDone)
+  fatExamDone: boolean
+  labInternalTotal: string  // lab: sum of internal components, out of 60
+  labFat: string            // lab: FAT marks out of 100
   selectedGradeCode: string | null
   setGradeField: (
-    field: keyof Omit<GradeState, 'setGradeField' | 'resetGrade' | 'setExtSlider' | 'setSelectedGradeCode'>,
+    field: keyof Omit<GradeState, 'setGradeField' | 'resetGrade' | 'setExtSlider' | 'setSelectedGradeCode' | 'fatExamDone' | 'setFatExamDone'>,
     value: string,
   ) => void
   setExtSlider: (value: number) => void
+  setFatExamDone: (v: boolean) => void
   setSelectedGradeCode: (code: string | null) => void
   resetGrade: () => void
 }
@@ -113,14 +118,19 @@ export const useStore = create<Store>()(
       cat1Avg: '', cat2Avg: '', internalAvg: '',
       maxInt: '', minInt: '', classSize: '65',
       extSlider: 60,
+      fatAvg: '', fatExamDone: false,
+      labInternalTotal: '', labFat: '',
       selectedGradeCode: null,
       setGradeField: (field, value) => set({ [field]: value } as Partial<Store>),
       setExtSlider: (value) => set({ extSlider: value }),
+      setFatExamDone: (v) => set({ fatExamDone: v }),
       setSelectedGradeCode: (code) => set({ selectedGradeCode: code }),
       resetGrade: () => set({
         cat1: '', cat2: '', internals: '',
         cat1Avg: '', cat2Avg: '', internalAvg: '',
         maxInt: '', minInt: '', classSize: '65', extSlider: 60,
+        fatAvg: '', fatExamDone: false,
+        labInternalTotal: '', labFat: '',
         selectedGradeCode: null,
       }),
 
@@ -154,6 +164,10 @@ export const useStore = create<Store>()(
         minInt: state.minInt,
         classSize: state.classSize,
         extSlider: state.extSlider,
+        fatAvg: state.fatAvg,
+        fatExamDone: state.fatExamDone,
+        labInternalTotal: state.labInternalTotal,
+        labFat: state.labFat,
         selectedGradeCode: state.selectedGradeCode,
       }),
     },

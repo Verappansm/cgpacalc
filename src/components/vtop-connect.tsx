@@ -17,7 +17,7 @@ export function VtopConnect({ onClose }: Props) {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [captchaAnswer, setCaptchaAnswer] = useState('')
-  const [sessionKey, setSessionKey] = useState('')
+  const [sessionState, setSessionState] = useState('')
   const [captchaImg, setCaptchaImg] = useState<string | null>(null)
   const [isRecaptcha, setIsRecaptcha] = useState(false)
   const [error, setError] = useState('')
@@ -30,7 +30,7 @@ export function VtopConnect({ onClose }: Props) {
       const res = await fetch('/api/vtop/captcha')
       const json = await res.json()
       if (json.error) throw new Error(json.error)
-      setSessionKey(json.sessionKey)
+      setSessionState(json.sessionState)
       setCaptchaImg(json.captchaBase64)
       setIsRecaptcha(json.isRecaptcha)
       setStep('captcha')
@@ -47,7 +47,7 @@ export function VtopConnect({ onClose }: Props) {
       const res = await fetch('/api/vtop/connect', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionKey, username, password, captchaAnswer }),
+        body: JSON.stringify({ sessionState, username, password, captchaAnswer }),
       })
       const json = await res.json()
       if (!res.ok || json.error) throw new Error(json.error ?? 'Login failed.')
@@ -57,7 +57,7 @@ export function VtopConnect({ onClose }: Props) {
       setError((e as Error).message ?? 'Connection failed.')
       setStep('error')
     }
-  }, [sessionKey, username, password, captchaAnswer, connectVtop])
+  }, [sessionState, username, password, captchaAnswer, connectVtop])
 
   const retry = () => {
     setCaptchaAnswer('')

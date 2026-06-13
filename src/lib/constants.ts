@@ -32,7 +32,3 @@ export const NAV_ITEMS = [
 
 export type TabId = typeof NAV_ITEMS[number]['id']
 
-// d2 constant for n=65 (expected range of std-normal sample ≈ 4.71)
-export const D2_N65 = 4.71
-// Correlation factor: σ_total = σ_int × √(1+(40/60)²+2×0.7×(40/60))
-export const TOTAL_SIGMA_SCALE = Math.sqrt(1 + (40 / 60) ** 2 + 2 * 0.7 * (40 / 60))
