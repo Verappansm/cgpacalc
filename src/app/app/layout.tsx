@@ -20,11 +20,10 @@ function Sidebar({ active }: { active: TabId }) {
     <>
       <aside className="hidden md:flex fixed left-0 top-0 bottom-0 w-56 flex-col border-r border-border bg-sidebar z-20">
         {/* Logo */}
-        <div className="flex items-center gap-2.5 px-5 py-4 border-b border-border/60">
-          <div className="w-6 h-6 rounded-md bg-primary flex items-center justify-center shrink-0">
-            <span className="text-primary-foreground text-[10px] font-black">G</span>
-          </div>
-          <span className="font-bold text-sm tracking-tight">VITGPA</span>
+        <div className="px-5 py-4 border-b border-border/60">
+          <span className="text-sm tracking-tight select-none">
+            <span className="font-semibold text-foreground/70">VIT</span><span className="font-black text-primary">GPA</span>
+          </span>
         </div>
 
         {/* Nav */}

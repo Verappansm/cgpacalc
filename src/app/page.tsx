@@ -43,25 +43,14 @@ export default function LandingPage() {
   return (
     <div className="h-screen overflow-hidden flex flex-col bg-background">
 
-      {/* Subtle dot-grid — adapts to light and dark via CSS var */}
-      <div
-        aria-hidden
-        className="pointer-events-none fixed inset-0 z-0"
-        style={{
-          backgroundImage: 'radial-gradient(circle, var(--border) 1px, transparent 1px)',
-          backgroundSize: '28px 28px',
-          opacity: 0.55,
-        }}
-      />
+      {/* Dot grid — colour and opacity differ per mode via .dot-grid class */}
+      <div aria-hidden className="dot-grid pointer-events-none fixed inset-0 z-0" />
 
       {/* ── Nav ──────────────────────────────────────────────────────────── */}
       <nav className="relative z-10 flex items-center justify-between px-6 sm:px-8 h-14 border-b border-border/60 shrink-0">
-        <div className="flex items-center gap-2.5">
-          <div className="w-6 h-6 rounded-md bg-primary flex items-center justify-center shrink-0">
-            <span className="text-primary-foreground text-[10px] font-black tracking-tighter">G</span>
-          </div>
-          <span className="text-sm font-bold tracking-tight">VITGPA</span>
-        </div>
+        <span className="text-sm tracking-tight">
+          <span className="font-semibold text-foreground/70">VIT</span><span className="font-black text-primary">GPA</span>
+        </span>
 
         <div className="flex items-center gap-2">
           <ThemeToggle />
@@ -178,7 +167,7 @@ export default function LandingPage() {
 
       {/* ── Footer ───────────────────────────────────────────────────────── */}
       <footer className="relative z-10 border-t border-border/50 px-8 h-10 flex items-center justify-between shrink-0">
-        <span className="text-[10px] text-muted-foreground/45">VITGPA — unofficial, open-source</span>
+        <span className="text-[10px] text-muted-foreground/45"><span className="font-semibold">VIT</span><span className="font-bold text-primary/60">GPA</span> — unofficial, open-source</span>
         <span className="text-[10px] text-muted-foreground/45">Not affiliated with VIT Chennai</span>
       </footer>
 
