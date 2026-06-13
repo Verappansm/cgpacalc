@@ -85,10 +85,6 @@ function courseTypeToVtop(typeStr: string): VtopCourse['type'] {
   return 'THEORY'
 }
 
-function isNonGradedType(typeStr: string, code: string): boolean {
-  const t = typeStr.toUpperCase().trim()
-  return t === 'SS' || t === 'ENG' || code.toUpperCase().startsWith('VITOL')
-}
 
 function parseCourseTable($: ReturnType<typeof cheerio.load>): VtopCourse[] {
   const courses: VtopCourse[] = []
@@ -117,8 +113,6 @@ function parseCourseTable($: ReturnType<typeof cheerio.load>): VtopCourse[] {
       const code    = idx.code >= 0 ? cells[idx.code] : ''
       const name    = idx.name >= 0 ? cells[idx.name] : (idx.code >= 0 ? cells[idx.code] : '')
       const typeStr = (idx.type >= 0 ? cells[idx.type] : '').toUpperCase().trim()
-
-      if (isNonGradedType(typeStr, code)) return
 
       let creds = 0
       if (idx.credits >= 0) {
@@ -286,7 +280,6 @@ function parseGradeHistory($: ReturnType<typeof cheerio.load>): VtopGradeHistory
     const courseType = (typeIdx >= 0 ? cells[typeIdx] : '').trim().toUpperCase()
 
     if (!code || !/^[A-Z]{2,5}\d{3,5}[A-Z]?$/.test(code)) return
-    if (isNonGradedType(courseType, code)) return
 
     const credits = parseFloat(credStr)
     if (isNaN(credits) || credits <= 0) return
