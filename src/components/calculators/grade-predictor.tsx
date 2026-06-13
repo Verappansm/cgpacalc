@@ -273,6 +273,13 @@ export function GradePredictor() {
   return (
     <div className="space-y-4">
 
+      {/* Under construction banner */}
+      <div className="flex items-center gap-2.5 rounded-2xl border border-yellow-800/50 bg-yellow-950/30 px-4 py-3 text-xs text-yellow-400">
+        <AlertTriangle className="size-3.5 shrink-0" />
+        <span className="font-medium">Under construction</span>
+        <span className="text-yellow-400/70">— grade predictor is experimental and may not reflect actual VIT grading.</span>
+      </div>
+
       {/* Course selector (VTOP connected) */}
       {vtopConnected && vtopData && allCourses.length > 0 && (
         <div className="rounded-2xl border border-border bg-card overflow-hidden">

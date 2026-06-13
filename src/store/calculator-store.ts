@@ -97,7 +97,7 @@ export const useStore = create<Store>()(
   persist(
     (set) => ({
       // ── GPA ──────────────────────────────────────────────────────────────
-      rows: [defaultRow()],
+      rows: Array.from({ length: 7 }, defaultRow),
       selectedSemId: null,
       addRow: () => set(s => ({ rows: [...s.rows, defaultRow()] })),
       removeRow: (id) =>
@@ -106,7 +106,7 @@ export const useStore = create<Store>()(
         set(s => ({ rows: s.rows.map(r => r.id === id ? { ...r, [field]: value } : r) })),
       setRows: (rows) => set({ rows }),
       setSelectedSemId: (id) => set({ selectedSemId: id }),
-      resetGPA: () => set({ rows: [defaultRow()], selectedSemId: null }),
+      resetGPA: () => set({ rows: Array.from({ length: 7 }, defaultRow), selectedSemId: null }),
 
       // ── CGPA ─────────────────────────────────────────────────────────────
       creditsDone: '', cgpaSoFar: '', creditsSem: '', gpaSem: '', targetCgpa: '',

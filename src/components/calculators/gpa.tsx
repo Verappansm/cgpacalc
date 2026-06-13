@@ -9,6 +9,7 @@ import { ProgressRing } from '@/components/shared/progress-ring'
 import { cn } from '@/lib/utils'
 
 const GRADES = Object.keys(GRADE_POINTS) as Grade[]
+const CREDIT_OPTIONS = ['1', '1.5', '2', '3', '4', '5']
 
 function AnimatedGPA({ value }: { value: number }) {
   const ref = useRef<HTMLSpanElement>(null)
@@ -70,7 +71,8 @@ export function GPACalculator() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedSemId, vtopData])
 
-  const valid = rows.filter(r => r.credits !== '' && Number(r.credits) > 0)
+  // Only count rows that have a credit value selected
+  const valid       = rows.filter(r => r.credits !== '' && Number(r.credits) > 0)
   const totalCredits = valid.reduce((s, r) => s + Number(r.credits), 0)
   const weighted     = valid.reduce((s, r) => s + Number(r.credits) * (GRADE_POINTS[r.grade as Grade] ?? 0), 0)
   const gpa          = totalCredits > 0 ? weighted / totalCredits : null
@@ -80,11 +82,15 @@ export function GPACalculator() {
     ? !!vtopData.gradeHistory.find(h => h.semId === selectedSemId)
     : false
 
+  // Determines whether to show the full VTOP layout (name + number credits + grade)
+  // or the compact manual layout (credit dropdown + grade only)
+  const isVtopMode = vtopConnected && vtopData
+
   return (
     <div className="space-y-4">
 
-      {/* Semester selector (only when VTOP connected) */}
-      {vtopConnected && vtopData && semesters.length > 0 && (
+      {/* Semester selector (VTOP connected only) */}
+      {isVtopMode && semesters.length > 0 && (
         <motion.div
           initial={{ opacity: 0, y: -8 }}
           animate={{ opacity: 1, y: 0 }}
@@ -177,7 +183,7 @@ export function GPACalculator() {
         </motion.div>
       )}
 
-      {/* Course rows */}
+      {/* ── Course rows ──────────────────────────────────────────────────────── */}
       <div className="rounded-2xl border border-border bg-card">
         <div className="flex items-center justify-between px-4 py-3 border-b border-border/60">
           <p className="text-sm font-semibold">Courses</p>
@@ -189,9 +195,16 @@ export function GPACalculator() {
           </button>
         </div>
 
-        <div className="grid grid-cols-[1fr_70px_90px_28px] gap-2 px-4 pt-3 pb-1 text-[11px] font-medium text-muted-foreground">
-          <span>Course</span><span>Credits</span><span>Grade</span><span />
-        </div>
+        {/* Column headers */}
+        {isVtopMode ? (
+          <div className="grid grid-cols-[1fr_70px_90px_28px] gap-2 px-4 pt-3 pb-1 text-[11px] font-medium text-muted-foreground">
+            <span>Course</span><span>Credits</span><span>Grade</span><span />
+          </div>
+        ) : (
+          <div className="grid grid-cols-[100px_1fr_28px] gap-2 px-4 pt-3 pb-1 text-[11px] font-medium text-muted-foreground">
+            <span>Credits</span><span>Grade</span><span />
+          </div>
+        )}
 
         <div className="px-3 pb-3 space-y-1.5">
           <AnimatePresence initial={false}>
@@ -202,24 +215,45 @@ export function GPACalculator() {
                 animate={{ opacity: 1, height: 'auto' }}
                 exit={{ opacity: 0, height: 0 }}
                 transition={{ duration: 0.15 }}
-                className="grid grid-cols-[1fr_70px_90px_28px] gap-2 items-center group"
+                className={cn(
+                  'grid gap-2 items-center group',
+                  isVtopMode
+                    ? 'grid-cols-[1fr_70px_90px_28px]'
+                    : 'grid-cols-[100px_1fr_28px]',
+                )}
               >
-                {/* Course name */}
-                <input
-                  type="text"
-                  placeholder={row.code || 'Course name'}
-                  value={row.name}
-                  onChange={e => updateRow(row.id, 'name', e.target.value)}
-                  className="h-9 w-full rounded-xl border border-border/60 bg-secondary/30 px-3 text-xs text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:border-primary/50 focus:bg-secondary transition-colors"
-                />
+                {/* VTOP mode: show course name as text input */}
+                {isVtopMode && (
+                  <input
+                    type="text"
+                    placeholder={row.code || 'Course name'}
+                    value={row.name}
+                    onChange={e => updateRow(row.id, 'name', e.target.value)}
+                    className="h-9 w-full rounded-xl border border-border/60 bg-secondary/30 px-3 text-xs text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:border-primary/50 focus:bg-secondary transition-colors"
+                  />
+                )}
 
-                {/* Credits */}
-                <input
-                  type="number" min={0} max={10} placeholder="4"
-                  value={row.credits}
-                  onChange={e => updateRow(row.id, 'credits', e.target.value)}
-                  className="h-9 w-full rounded-xl border border-border/60 bg-secondary/30 px-2 text-sm text-center text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/50 transition-colors"
-                />
+                {/* Credits — dropdown in manual mode, number display in VTOP mode */}
+                {isVtopMode ? (
+                  <input
+                    type="number" min={1} max={10} placeholder="4"
+                    value={row.credits}
+                    onChange={e => updateRow(row.id, 'credits', e.target.value)}
+                    onWheel={e => (e.target as HTMLInputElement).blur()}
+                    className="h-9 w-full rounded-xl border border-border/60 bg-secondary/30 px-2 text-sm text-center text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/50 transition-colors"
+                  />
+                ) : (
+                  <select
+                    value={row.credits}
+                    onChange={e => updateRow(row.id, 'credits', e.target.value)}
+                    className="h-9 w-full rounded-xl border border-border/60 bg-secondary/30 px-2 text-sm text-center text-foreground focus:outline-none focus:border-primary/50 transition-colors cursor-pointer appearance-none"
+                  >
+                    <option value="">—</option>
+                    {CREDIT_OPTIONS.map(c => (
+                      <option key={c} value={c}>{c} cr</option>
+                    ))}
+                  </select>
+                )}
 
                 {/* Grade */}
                 <select
@@ -256,14 +290,14 @@ export function GPACalculator() {
             onClick={addRow}
             className="flex items-center gap-1.5 rounded-xl border border-border/60 bg-secondary/30 hover:bg-secondary px-3 py-2 text-xs font-medium text-foreground transition-colors"
           >
-            <Plus className="size-3.5" /> Add course
+            <Plus className="size-3.5" /> Add row
           </button>
         </div>
       </div>
 
       {gpa === null && (
         <div className="rounded-2xl border border-border/40 border-dashed py-8 text-center text-sm text-muted-foreground">
-          {vtopConnected ? 'Select a semester above or add credits manually' : 'Enter credits for at least one course to see your GPA'}
+          {isVtopMode ? 'Select a semester above or pick credits manually' : 'Select credits for at least one row to see your GPA'}
         </div>
       )}
 

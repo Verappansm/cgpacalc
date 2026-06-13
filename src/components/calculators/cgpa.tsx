@@ -59,6 +59,7 @@ function NumberInput({
         type="number" min={0} max={max} step={step}
         placeholder={placeholder} value={value}
         onChange={e => onChange(e.target.value)}
+        onWheel={e => (e.target as HTMLInputElement).blur()}
         className="w-full h-10 rounded-xl border border-border/60 bg-secondary/30 px-3 text-sm text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:border-primary/50 focus:bg-secondary transition-colors"
       />
     </div>
