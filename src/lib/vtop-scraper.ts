@@ -189,6 +189,68 @@ function examMonthToSemLabel(examMonth: string): string {
   return `Semester ${examMonth}`
 }
 
+// Normalise a raw VTOP semester code/label to a canonical "Fall|Winter Semester YYYY-YY" form.
+function normSemCode(raw: string): string | null {
+  const u = raw.toUpperCase().trim()
+  const m1 = u.match(/\bFS(\d{2})(\d{2})\b/)
+  if (m1) return `Fall Semester 20${m1[1]}-${m1[2]}`
+  const m2 = u.match(/\bWS(\d{2})(\d{2})\b/)
+  if (m2) return `Winter Semester 20${m2[1]}-${m2[2]}`
+  if (/WINTER/i.test(u)) {
+    const ym = u.match(/(\d{4})[- ](\d{2})/)
+    if (ym) return `Winter Semester ${ym[1]}-${ym[2]}`
+  }
+  if (/FALL|ODD/i.test(u)) {
+    const ym = u.match(/(\d{4})[- ](\d{2})/)
+    if (ym) return `Fall Semester ${ym[1]}-${ym[2]}`
+  }
+  return null
+}
+
+// Parse the semester-wise performance summary table that appears at the bottom of the
+// VTOP grade history page. Returns official { semLabel, sgpa } pairs.
+function parseSemesterSummaryTable($: ReturnType<typeof cheerio.load>): { semLabel: string; sgpa: number }[] {
+  const entries: { semLabel: string; sgpa: number }[] = []
+  $('table').each((_, table) => {
+    const rows = $(table).find('tr').toArray()
+    if (rows.length < 2) return
+    const hdrs = $(rows[0]).find('td, th').map((_, el) => $(el).text().trim().toLowerCase()).get()
+    if (!hdrs.some(h => h.includes('sgpa'))) return
+
+    const sgpaIdx   = hdrs.findIndex(h => h.includes('sgpa'))
+    const semIdx    = hdrs.findIndex(h => h.includes('register') || (h.includes('sem') && !h.includes('credit')))
+    const effSemIdx = semIdx >= 0 ? semIdx : (hdrs[0] === 'sl.no' || hdrs[0] === 'sl' ? 1 : 0)
+
+    for (let i = 1; i < rows.length; i++) {
+      const cells = $(rows[i]).find('td').map((_, td) => $(td).text().trim()).get()
+      if (cells.length <= sgpaIdx) continue
+      const rawSem = (cells[effSemIdx] ?? '').trim()
+      const sgpa   = parseFloat(cells[sgpaIdx] ?? '')
+      if (!rawSem || isNaN(sgpa) || sgpa <= 0 || sgpa > 10) continue
+      const label = normSemCode(rawSem)
+      if (label) entries.push({ semLabel: label, sgpa })
+    }
+    if (entries.length > 0) return false
+  })
+  return entries
+}
+
+// Find the semester in `sems` whose year is closest to the year embedded in `label`.
+function findNearestSem(label: string, sems: VtopGradeHistory[]): VtopGradeHistory | undefined {
+  const ym = label.match(/(\d{4})-(\d{2})/)
+  if (!ym) return undefined
+  const yr = parseInt(ym[1])
+  let best: VtopGradeHistory | undefined
+  let minDist = Infinity
+  for (const s of sems) {
+    const m = s.semLabel.match(/(\d{4})-(\d{2})/)
+    if (!m) continue
+    const d = Math.abs(parseInt(m[1]) - yr)
+    if (d < minDist) { minDist = d; best = s }
+  }
+  return best
+}
+
 function parseGradeHistory($: ReturnType<typeof cheerio.load>): VtopGradeHistory[] {
   let codeIdx = 1, nameIdx = 2, creditsIdx = 4, gradeIdx = 5, examMonthIdx = 6, typeIdx = -1
 
@@ -246,6 +308,39 @@ function parseGradeHistory($: ReturnType<typeof cheerio.load>): VtopGradeHistory
     const tw = sem.courses.reduce((s, c) => s + c.credits * (GP[c.grade] ?? 0), 0)
     if (sem.credits > 0) sem.gpa = Math.round((tw / sem.credits) * 100) / 100
   }
+
+  // If VTOP publishes an official semester-wise SGPA table, use it as the source of truth.
+  // This corrects wrong SGPAs and removes phantom semesters created by re-appear exams.
+  const summary = parseSemesterSummaryTable($)
+  if (summary.length > 0) {
+    const officialSet = new Set(summary.map(e => e.semLabel.toLowerCase()))
+    const sgpaMap     = new Map(summary.map(e => [e.semLabel.toLowerCase(), e.sgpa]))
+
+    const official = result.filter(g =>  officialSet.has(g.semLabel.toLowerCase()))
+    const extra    = result.filter(g => !officialSet.has(g.semLabel.toLowerCase()))
+
+    // Move courses from extra (re-appear / supplementary) groups into the nearest official semester.
+    // Don't double-add a course that already appears there.
+    for (const ex of extra) {
+      const target = findNearestSem(ex.semLabel, official) ?? official[official.length - 1]
+      if (!target) continue
+      for (const c of ex.courses) {
+        if (!target.courses.find(tc => tc.code === c.code)) {
+          target.courses.push(c)
+          target.credits += c.credits
+        }
+      }
+    }
+
+    // Replace calculated SGPA with official value
+    for (const g of official) {
+      const off = sgpaMap.get(g.semLabel.toLowerCase())
+      if (off !== undefined) g.gpa = off
+    }
+
+    return official.reverse()
+  }
+
   return result.reverse()
 }
 

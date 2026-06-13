@@ -176,10 +176,11 @@ export function VtopConnect({ onClose }: Props) {
                       )}
                       <input
                         type="text"
-                        placeholder="Type captcha here"
+                        placeholder="TYPE CAPTCHA HERE"
                         value={captchaAnswer}
-                        onChange={e => setCaptchaAnswer(e.target.value)}
+                        onChange={e => setCaptchaAnswer(e.target.value.toUpperCase())}
                         onKeyDown={e => e.key === 'Enter' && login()}
+                        style={{ textTransform: 'uppercase' }}
                         className="w-full h-10 rounded-xl border border-border/60 bg-secondary/30 px-3 text-sm tracking-widest placeholder:text-muted-foreground/40 focus:outline-none focus:border-primary/50 transition-colors"
                         autoFocus
                       />

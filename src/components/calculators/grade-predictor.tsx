@@ -285,7 +285,7 @@ export function GradePredictor() {
           <div className="p-3">
             <select
               value={selectedGradeCode ?? ''}
-              onChange={e => { setSelectedGradeCode(e.target.value || null); resetGrade() }}
+              onChange={e => { resetGrade(); setSelectedGradeCode(e.target.value || null) }}
               className="w-full h-10 appearance-none rounded-xl border border-border/60 bg-secondary/30 px-3 pr-8 text-sm text-foreground focus:outline-none focus:border-primary/50 transition-colors cursor-pointer"
             >
               <option value="">— select a course —</option>
