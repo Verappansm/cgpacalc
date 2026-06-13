@@ -142,10 +142,30 @@ export const useStore = create<Store>()(
       connectVtop: (data) => set({ vtopData: data, vtopConnected: true, vtopError: null, vtopLoading: false }),
       setVtopLoading: (v) => set({ vtopLoading: v }),
       setVtopError: (v) => set({ vtopError: v, vtopLoading: false }),
-      disconnectVtop: () => set({ vtopData: null, vtopConnected: false, vtopError: null }),
+      disconnectVtop: () => set({
+        vtopData: null, vtopConnected: false, vtopError: null,
+        // Reset all calculator state so VTOP-filled data is wiped
+        rows: Array.from({ length: 7 }, defaultRow), selectedSemId: null,
+        creditsDone: '', cgpaSoFar: '', creditsSem: '', gpaSem: '', targetCgpa: '',
+        cat1: '', cat2: '', internals: '',
+        cat1Avg: '', cat2Avg: '', internalAvg: '',
+        maxInt: '', minInt: '', classSize: '65', extSlider: 60,
+        fatAvg: '', fatExamDone: false,
+        labInternalTotal: '', labFat: '',
+        selectedGradeCode: null,
+      }),
     }),
     {
       name: 'vit-calc-store',
+      onRehydrateStorage: () => (state) => {
+        if (!state) return
+        // VTOP data is never persisted. If rows were filled from a VTOP session
+        // (id starts with 'vtop-'), clear them so stale course data doesn't survive a reload.
+        if (state.rows.some(r => r.id.startsWith('vtop-'))) {
+          state.rows = Array.from({ length: 7 }, defaultRow)
+          state.selectedSemId = null
+        }
+      },
       partialize: (state) => ({
         rows: state.rows,
         selectedSemId: state.selectedSemId,
