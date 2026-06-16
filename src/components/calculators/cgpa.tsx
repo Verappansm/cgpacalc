@@ -3,6 +3,7 @@
 import { useEffect, useRef } from 'react'
 import { animate } from 'framer-motion'
 import { RotateCcw, Sparkles } from 'lucide-react'
+import Link from 'next/link'
 import { useStore } from '@/store/calculator-store'
 import { cn } from '@/lib/utils'
 
@@ -135,7 +136,7 @@ export function CGPACalculator() {
         <div className="p-5 space-y-4">
           <div className="grid grid-cols-2 gap-3">
             <NumberInput
-              label="Credits done so far"
+              label="Credits done so far *"
               hint="Exclude VITOL"
               vtopHint={isVtopFilled ? 'From VTOP grade history' : undefined}
               placeholder="e.g. 120"
@@ -143,15 +144,23 @@ export function CGPACalculator() {
               onChange={v => setCgpaField('creditsDone', v)}
               max={400} step={1}
             />
+            <div>
+              <NumberInput
+                label="CGPA so far *"
+                hint="→ check grade history"
+                vtopHint={isVtopFilled ? 'From VTOP grade history' : undefined}
+                placeholder="e.g. 8.50"
+                value={cgpaSoFar}
+                onChange={v => setCgpaField('cgpaSoFar', v)}
+              />
+              <Link
+                href="/app?tab=analytics"
+                className="mt-1 inline-flex items-center gap-0.5 text-[10px] text-primary/50 hover:text-primary transition-colors"
+              >
+              </Link>
+            </div>
             <NumberInput
-              label="CGPA so far"
-              vtopHint={isVtopFilled ? 'From VTOP grade history' : undefined}
-              placeholder="e.g. 8.50"
-              value={cgpaSoFar}
-              onChange={v => setCgpaField('cgpaSoFar', v)}
-            />
-            <NumberInput
-              label="Credits this semester"
+              label="Credits this semester *"
               hint="Exclude VITOL"
               vtopHint={isVtopFilled && selectedSemId ? 'From selected semester' : undefined}
               placeholder="e.g. 24"
@@ -196,14 +205,31 @@ export function CGPACalculator() {
         </div>
       </div>
 
-      {/* ── Target CGPA ───────────────────────────────────────────────────── */}
+      {/* ── Target Calculator ─────────────────────────────────────────────── */}
       <div className="rounded-2xl border border-border bg-card overflow-hidden">
         <div className="px-5 py-3.5 border-b border-border/60">
-          <p className="text-sm font-semibold">Target CGPA</p>
-          <p className="text-xs text-muted-foreground">What GPA do you need this semester?</p>
+          <div className="flex items-start justify-between gap-3">
+            <p className="text-sm font-semibold">Target Calculator</p>
+            <p className="text-[10px] text-muted-foreground/60 text-right leading-relaxed">
+              Fill the 3 required fields (*) above to get results
+            </p>
+          </div>
         </div>
 
         <div className="p-5 space-y-4">
+          {/* Max achievable CGPA */}
+          {cd !== null && cg !== null && cs !== null && cd > 0 && cs > 0 && (
+            <div className="rounded-xl border border-border/50 bg-secondary/20 px-4 py-3 flex items-center justify-between">
+              <div>
+                <p className="text-xs text-muted-foreground">Max achievable CGPA</p>
+                <p className="text-[11px] text-muted-foreground/60">If you score 10.00 this semester</p>
+              </div>
+              <p className="text-2xl font-black tabular-nums text-foreground/80">
+                {((cd * cg + cs * 10) / (cd + cs)).toFixed(2)}
+              </p>
+            </div>
+          )}
+
           {(!creditsDone || !cgpaSoFar || !creditsSem) && (
             <div className="rounded-xl bg-secondary/30 border border-border/40 px-4 py-3 text-xs text-muted-foreground">
               Complete the Current CGPA section above first

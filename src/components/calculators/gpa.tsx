@@ -35,12 +35,19 @@ function gpaHex(gpa: number) {
   return '#f87171'
 }
 function gpaLabel(gpa: number) {
-  if (gpa >= 9.5) return 'Perfect'
-  if (gpa >= 9)   return 'Outstanding'
-  if (gpa >= 8)   return 'Excellent'
-  if (gpa >= 7)   return 'Very Good'
-  if (gpa >= 6)   return 'Good'
-  return 'Needs work'
+  if (gpa >= 9.5) return "You're insane — too good"
+  if (gpa >= 9.2) return 'Excellent'
+  if (gpa >= 9.0) return 'Very good'
+  if (gpa >= 8.9) return 'Almost there, you got this'
+  if (gpa >= 8.5) return 'Good'
+  if (gpa >= 8.4) return 'Keep the good work going'
+  if (gpa >= 8.0) return 'Building momentum'
+  if (gpa >= 7.5) return "You've got this — keep pushing"
+  if (gpa >= 7.0) return 'Needs work'
+  if (gpa >= 6.5) return "One bad sem won't define you"
+  if (gpa >= 6.0) return 'Work harder'
+  if (gpa >= 5.0) return 'Reset yourself — time will change'
+  return 'Reset yourself — time will change'
 }
 
 export function GPACalculator() {
@@ -186,7 +193,14 @@ export function GPACalculator() {
       {/* ── Course rows ──────────────────────────────────────────────────────── */}
       <div className="rounded-2xl border border-border bg-card">
         <div className="flex items-center justify-between px-4 py-3 border-b border-border/60">
-          <p className="text-sm font-semibold">Courses</p>
+          <div>
+            <p className="text-sm font-semibold">Courses</p>
+            {!isVtopMode && (
+              <p className="text-[10px] text-muted-foreground/60 mt-0.5">
+                Connect to VTOP to skip manually entering courses for a sem
+              </p>
+            )}
+          </div>
           <button
             onClick={resetGPA}
             className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"

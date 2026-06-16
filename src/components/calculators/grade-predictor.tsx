@@ -103,6 +103,7 @@ function Num({ label, hint, vtopHint, placeholder, value, onChange, max, step = 
         type="number" min={0} max={max} step={step}
         placeholder={placeholder} value={value}
         onChange={e => onChange(e.target.value)}
+        onWheel={e => (e.target as HTMLInputElement).blur()}
         disabled={disabled}
         className="w-full h-10 rounded-xl border border-border/60 bg-secondary/30 px-3 text-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-primary/50 focus:bg-secondary transition-colors disabled:opacity-50"
       />
@@ -386,7 +387,14 @@ export function GradePredictor() {
           <SectionCard num={2} title="FAT exam (End Semester)" sub="Out of 100 — contributes 40 marks to your total" complete={labFat !== '' || extSlider > 0}>
             <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <Toggle on={fatExamDone} onToggle={() => setFatExamDone(!fatExamDone)} label="FAT exam completed" />
+                <Toggle
+                  on={fatExamDone}
+                  onToggle={() => {
+                    if (fatExamDone) setGradeField('labFat', '')
+                    setFatExamDone(!fatExamDone)
+                  }}
+                  label="FAT exam completed"
+                />
               </div>
               {fatExamDone ? (
                 <Num
@@ -511,7 +519,14 @@ export function GradePredictor() {
           {/* Step 2: FAT exam */}
           <SectionCard num={2} title="FAT exam (End Semester)" sub="Out of 100 — contributes 40 marks · 15+15+30+40 = 100" complete={intTotal !== null}>
             <div className="space-y-4">
-              <Toggle on={fatExamDone} onToggle={() => setFatExamDone(!fatExamDone)} label="FAT exam completed" />
+              <Toggle
+                on={fatExamDone}
+                onToggle={() => {
+                  if (fatExamDone) setExtSlider(60)
+                  setFatExamDone(!fatExamDone)
+                }}
+                label="FAT exam completed"
+              />
 
               {fatExamDone ? (
                 <Num
