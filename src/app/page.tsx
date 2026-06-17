@@ -81,7 +81,7 @@ export default function LandingPage() {
             <ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" />
           </Link>
           <Link
-            href="/app"
+            href="/app?vtop=open"
             className="group inline-flex items-center gap-2 rounded-xl border border-zinc-300 dark:border-zinc-600 bg-white/70 dark:bg-zinc-800/60 backdrop-blur-sm px-6 py-2.5 text-[15px] font-medium text-zinc-600 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white hover:bg-white dark:hover:bg-zinc-800 active:scale-[0.98] transition-all"
           >
             <Plug className="size-4" />

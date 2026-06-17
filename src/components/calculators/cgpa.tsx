@@ -71,7 +71,7 @@ export function CGPACalculator() {
   const {
     creditsDone, cgpaSoFar, creditsSem, gpaSem, targetCgpa,
     setCgpaField, resetCGPA,
-    vtopData, vtopConnected, selectedSemId,
+    vtopData, vtopConnected,
   } = useStore()
 
   // Auto-fill from VTOP data when available
@@ -86,14 +86,15 @@ export function CGPACalculator() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [vtopData])
 
-  // Auto-fill credits this semester when semester is selected
+  // Auto-fill credits for the current semester (timetable data, not GPA tab selection)
   useEffect(() => {
-    if (!vtopData || !selectedSemId) return
-    const courses = vtopData.coursesBySem[selectedSemId] ?? []
+    if (!vtopData) return
+    const currentSemId = vtopData.semesters[0]?.id
+    const courses = currentSemId ? (vtopData.coursesBySem[currentSemId] ?? []) : []
     const semCredits = courses.reduce((s, c) => s + c.credits, 0)
-    if (semCredits > 0) setCgpaField('creditsSem', String(semCredits))
+    if (creditsSem === '') setCgpaField('creditsSem', String(semCredits))
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedSemId, vtopData])
+  }, [vtopData])
 
   const cd = creditsDone !== '' ? Number(creditsDone) : null
   const cg = cgpaSoFar   !== '' ? Number(cgpaSoFar)   : null
@@ -162,7 +163,7 @@ export function CGPACalculator() {
             <NumberInput
               label="Credits this semester *"
               hint="Exclude VITOL"
-              vtopHint={isVtopFilled && selectedSemId ? 'From selected semester' : undefined}
+              vtopHint={isVtopFilled ? 'From current semester (timetable)' : undefined}
               placeholder="e.g. 24"
               value={creditsSem}
               onChange={v => setCgpaField('creditsSem', v)}

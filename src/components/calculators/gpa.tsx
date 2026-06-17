@@ -61,7 +61,13 @@ export function GPACalculator() {
   useEffect(() => {
     if (!vtopData || !selectedSemId) return
     const courses = vtopData.coursesBySem[selectedSemId] ?? []
-    if (!courses.length) return
+    if (!courses.length) {
+      setRows(Array.from({ length: 7 }, () => ({
+        id: `empty-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        code: '', name: '', credits: '', grade: 'S' as const, type: '' as const,
+      })))
+      return
+    }
     const histEntry = vtopData.gradeHistory.find(h => h.semId === selectedSemId)
     const newRows: CourseRow[] = courses.map((c, i) => {
       const gradeInfo = histEntry?.courses.find(hc => hc.code === c.code)

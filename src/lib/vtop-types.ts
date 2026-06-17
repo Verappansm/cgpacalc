@@ -42,8 +42,10 @@ export type VtopData = {
   regNumber: string
   cgpa: number
   totalCredits: number
+  totalProgramCredits?: number
   semesters: VtopSemester[]
   coursesBySem: Record<string, VtopCourse[]>
   gradeHistory: VtopGradeHistory[]
   currentSemMarks: VtopCourseMarks[]
+  currentSemMarksId?: string
 }

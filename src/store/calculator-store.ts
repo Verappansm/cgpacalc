@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { persist } from 'zustand/middleware'
+import { persist, createJSONStorage } from 'zustand/middleware'
 import type { VtopData } from '@/lib/vtop-types'
 
 // ── GPA store ─────────────────────────────────────────────────────────────────
@@ -157,6 +157,7 @@ export const useStore = create<Store>()(
     }),
     {
       name: 'vit-calc-store',
+      storage: createJSONStorage(() => sessionStorage),
       onRehydrateStorage: () => (state) => {
         if (!state) return
         // VTOP data is never persisted. If rows were filled from a VTOP session

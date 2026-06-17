@@ -139,35 +139,64 @@ function parseCourseTable($: ReturnType<typeof cheerio.load>): VtopCourse[] {
   return courses
 }
 
-function parseCGPAFromPage($: ReturnType<typeof cheerio.load>): { cgpa: number; totalCredits: number } {
-  let cgpa = 0, totalCredits = 0
-  $('table').each((_, table) => {
-    const firstRowTds = $(table).find('tr').first().find('td')
-    if (firstRowTds.length < 2) return
-    if (!firstRowTds.first().text().toLowerCase().includes('credit')) return
+function parseCGPAFromPage($: ReturnType<typeof cheerio.load>): { cgpa: number; totalCredits: number; totalProgramCredits: number } {
+  let cgpa = 0, totalCredits = 0, totalProgramCredits = 0
 
-    let earnedIdx = -1, cgpaIdx = -1
-    firstRowTds.each((j, td) => {
-      const txt = $(td).text().trim().toLowerCase()
-      if (txt.includes('earned')) earnedIdx = j
-      else if (txt.includes('cgpa')) cgpaIdx = j
-    })
-    if (earnedIdx < 0 && cgpaIdx < 0) return
-
-    const n = firstRowTds.length
-    const allTds = $(table).find('td').toArray()
-    if (allTds.length < n * 2) return
-    if (earnedIdx >= 0) {
-      const v = parseFloat($(allTds[earnedIdx + n]).text().trim())
+  // Strategy 1: row-based label|value format (VTOP grade history summary table)
+  // e.g. <tr><td>Total Credits</td><td>151.0</td>...</tr>
+  $('tr').each((_, row) => {
+    const cells = $(row).find('td')
+    if (cells.length < 2) return
+    const label = cells.first().text().trim().toLowerCase()
+    if (label === 'total credits') {
+      const v = parseFloat(cells.eq(1).text().trim())
+      if (!isNaN(v) && v > 0) totalProgramCredits = v
+    } else if (label.includes('earned') && label.includes('credit')) {
+      const v = parseFloat(cells.eq(1).text().trim())
       if (!isNaN(v) && v > 0) totalCredits = v
-    }
-    if (cgpaIdx >= 0) {
-      const v = parseFloat($(allTds[cgpaIdx + n]).text().trim())
+    } else if (label === 'cgpa') {
+      const v = parseFloat(cells.eq(1).text().trim())
       if (!isNaN(v) && v > 0) cgpa = v
     }
-    return false
   })
-  return { cgpa, totalCredits }
+
+  // Strategy 2: column-header format (fallback)
+  // e.g. <tr><td>Credits Earned</td><td>CGPA</td></tr> / <tr><td>148</td><td>8.65</td></tr>
+  if (cgpa === 0 && totalCredits === 0) {
+    $('table').each((_, table) => {
+      const firstRowTds = $(table).find('tr').first().find('td')
+      if (firstRowTds.length < 2) return
+      if (!firstRowTds.first().text().toLowerCase().includes('credit')) return
+
+      let earnedIdx = -1, cgpaIdx = -1, totalIdx = -1
+      firstRowTds.each((j, td) => {
+        const txt = $(td).text().trim().toLowerCase()
+        if (txt.includes('earned')) earnedIdx = j
+        else if (txt.includes('cgpa')) cgpaIdx = j
+        else if (txt === 'total credits' || txt === 'total') totalIdx = j
+      })
+      if (earnedIdx < 0 && cgpaIdx < 0) return
+
+      const n = firstRowTds.length
+      const allTds = $(table).find('td').toArray()
+      if (allTds.length < n * 2) return
+      if (earnedIdx >= 0) {
+        const v = parseFloat($(allTds[earnedIdx + n]).text().trim())
+        if (!isNaN(v) && v > 0) totalCredits = v
+      }
+      if (cgpaIdx >= 0) {
+        const v = parseFloat($(allTds[cgpaIdx + n]).text().trim())
+        if (!isNaN(v) && v > 0) cgpa = v
+      }
+      if (totalIdx >= 0 && totalIdx !== earnedIdx) {
+        const v = parseFloat($(allTds[totalIdx + n]).text().trim())
+        if (!isNaN(v) && v > totalCredits) totalProgramCredits = v
+      }
+      return false
+    })
+  }
+
+  return { cgpa, totalCredits, totalProgramCredits }
 }
 
 function examMonthToSemLabel(examMonth: string): string {
@@ -548,17 +577,17 @@ export async function loginAndFetch(params: {
 
   // ── Grade history + CGPA ──────────────────────────────────────────────────
   let gradeHistory: VtopGradeHistory[] = []
+  let totalProgramCredits = 0
   try {
     const r = await vtopPost('/examinations/examGradeView/StudentGradeHistory', cookies, { ...postBase, nocache: Date.now().toString() })
     cookies = r.cookies
     const $gh = cheerio.load(r.text)
     gradeHistory = parseGradeHistory($gh)
 
-    if (cgpa === 0) {
-      const ghCGPA = parseCGPAFromPage($gh)
-      if (ghCGPA.cgpa > 0) cgpa = ghCGPA.cgpa
-      if (ghCGPA.totalCredits > 0) totalCredits = ghCGPA.totalCredits
-    }
+    const ghCGPA = parseCGPAFromPage($gh)
+    if (cgpa === 0 && ghCGPA.cgpa > 0) cgpa = ghCGPA.cgpa
+    if (ghCGPA.totalCredits > 0) totalCredits = ghCGPA.totalCredits
+    if (ghCGPA.totalProgramCredits > 0) totalProgramCredits = ghCGPA.totalProgramCredits
 
     if (cgpa === 0 && gradeHistory.length > 0) {
       const GP: Record<string, number> = { S: 10, A: 9, B: 8, C: 7, D: 6, E: 5, F: 0, N: 0 }
@@ -595,7 +624,13 @@ export async function loginAndFetch(params: {
   } catch { /* partial ok */ }
 
   // Fill past semesters from grade history
-  const normLabel = (s: string) => s.toLowerCase().replace(/\s+/g, ' ').replace(/i year|ii year|iii year|iv year/gi, '').trim()
+  const normLabel = (s: string) => s
+    .toLowerCase()
+    .replace(/^[a-z]{1,4}\d{3,10}\s*[-–]\s*/, '') // strip "CH2022235 - " type prefixes
+    .replace(/\b(i{1,3}v?|iv)\s+year\b/gi, '')     // strip "I Year", "II Year", "III Year", "IV Year"
+    .replace(/\b\d+\s*(?:st|nd|rd|th)\s+year\b/gi, '') // strip "1st Year", "2nd Year", etc.
+    .replace(/\s+/g, ' ')
+    .trim()
   for (const h of gradeHistory) {
     const match = semesters.find(s => normLabel(s.label) === normLabel(h.semLabel))
     const key   = match ? match.id : h.semId
@@ -613,11 +648,32 @@ export async function loginAndFetch(params: {
     h.semId = key
   }
 
-  // ── Current marks ─────────────────────────────────────────────────────────
+  // Deduplicate semesters by normalized label (keeps first occurrence — timetable sems take priority)
+  const seenLabels = new Set<string>()
+  semesters = semesters.filter(s => {
+    const nl = normLabel(s.label)
+    if (seenLabels.has(nl)) return false
+    seenLabels.add(nl)
+    return true
+  })
+
+  // ── Current marks — try semesters in order until one returns marks ────────
   let currentSemMarks: VtopCourseMarks[] = []
+  let currentSemMarksId: string | undefined
   try {
-    const r = await vtopPost('/examinations/doStudentMarkView', cookies, { ...postBase, nocache: Date.now().toString() })
-    currentSemMarks = parseMarks(cheerio.load(r.text))
+    for (const sem of semesters.slice(0, 3)) {
+      const r = await vtopPost('/examinations/doStudentMarkView', cookies, {
+        ...postBase,
+        semesterSubId: sem.id,
+        nocache: Date.now().toString(),
+      })
+      const marks = parseMarks(cheerio.load(r.text))
+      if (marks.length > 0) {
+        currentSemMarks = marks
+        currentSemMarksId = sem.id
+        break
+      }
+    }
   } catch { /* partial ok */ }
 
   return {
@@ -625,9 +681,11 @@ export async function loginAndFetch(params: {
     regNumber: authorizedID,
     cgpa,
     totalCredits,
+    totalProgramCredits: totalProgramCredits > 0 ? totalProgramCredits : undefined,
     semesters,
     coursesBySem,
     gradeHistory,
     currentSemMarks,
+    currentSemMarksId,
   }
 }

@@ -11,7 +11,7 @@ import {
 } from 'recharts'
 import {
   TrendingUp, TrendingDown, Minus, Award, BookOpen,
-  BarChart3, Target, Zap, ChevronRight, Wifi, Star, Shield, Flame,
+  BarChart3, Target, Zap, ChevronRight, Wifi, Star, Shield, Flame, ChevronDown,
 } from 'lucide-react'
 import { useStore } from '@/store/calculator-store'
 import { GRADE_CONFIG, GRADE_POINTS, type Grade } from '@/lib/constants'
@@ -140,10 +140,20 @@ function SemTimeline({ data }: { data: { sem: string; sgpa: number; credits: num
 // ── Grade heatmap (semester × grade) ────────────────────────────────────────
 
 function GradeHeatmap({ history }: { history: { semLabel: string; courses: { grade: string }[] }[] }) {
-  const cells = history.map(h => {
+  // Sort chronologically: by year, then fall (0) before winter (1)
+  const sorted = [...history].sort((a, b) => {
+    const parse = (l: string) => {
+      const m = l.match(/(\d{4})-(\d{2})/)
+      return (m ? parseInt(m[1]) : 0) * 2 + (/winter/i.test(l) ? 1 : 0)
+    }
+    return parse(a.semLabel) - parse(b.semLabel)
+  })
+
+  const cells = sorted.map(h => {
     const counts = Object.fromEntries(GRADE_ORDER.map(g => [g, 0])) as Record<string, number>
     h.courses.forEach(c => { if (c.grade in counts) counts[c.grade]++ })
-    return { sem: h.semLabel.split('/').pop()?.trim().replace('SEMESTER', 'SEM') ?? h.semLabel.slice(0, 12), counts }
+    const short = h.semLabel.replace(/Fall Semester/i, 'Fall').replace(/Winter Semester/i, 'Winter')
+    return { sem: short, counts }
   })
 
   const maxCount = Math.max(...cells.flatMap(c => Object.values(c.counts)))
@@ -281,14 +291,22 @@ function NoData() {
 
 export function Analytics() {
   const { vtopData, vtopConnected } = useStore()
+  const [showDataLog, setShowDataLog] = useState(false)
 
-  const { trendData, gradeDistData, semTimelineData, stats } = useMemo(() => {
+  const { trendData, gradeDistData, semTimelineData, stats, yMin, yMax, yTicks } = useMemo(() => {
     if (!vtopData || vtopData.gradeHistory.length === 0) return {
       trendData: [], gradeDistData: [], semTimelineData: [], stats: null,
+      yMin: 0, yMax: 10, yTicks: [0, 5, 6, 7, 8, 9, 10],
     }
 
     const GP = GRADE_POINTS as Record<string, number>
-    const hist = vtopData.gradeHistory
+
+    // Sort grade history chronologically: by year, then fall before winter
+    const sortKey = (label: string) => {
+      const m = label.match(/(\d{4})-(\d{2})/)
+      return (m ? parseInt(m[1]) : 0) * 2 + (/winter/i.test(label) ? 1 : 0)
+    }
+    const hist = [...vtopData.gradeHistory].sort((a, b) => sortKey(a.semLabel) - sortKey(b.semLabel))
 
     // GPA trend + CGPA progression
     let runCredits = 0
@@ -297,11 +315,23 @@ export function Analytics() {
       runWeighted += h.courses.reduce((s, c) => s + c.credits * (GP[c.grade] ?? 0), 0)
       runCredits  += h.credits
       return {
-        sem:  h.semLabel.split('/').pop()?.trim().replace('SEMESTER', 'SEM').replace('  ', ' ') ?? h.semLabel.slice(0, 18),
+        sem:  h.semLabel.replace(/Fall Semester/i, 'Fall').replace(/Winter Semester/i, 'Winter'),
         sgpa: h.gpa,
         cgpa: runCredits > 0 ? parseFloat((runWeighted / runCredits).toFixed(3)) : 0,
       }
     })
+
+    // Chart Y-axis: zoom in on actual data range
+    const allGpas = trendData.flatMap(d => [d.sgpa, d.cgpa]).filter(v => v > 0)
+    const dataMin = allGpas.length > 0 ? Math.min(...allGpas) : 0
+    const dataMax = allGpas.length > 0 ? Math.max(...allGpas) : 10
+    const buffer = 0.4
+    const yMin = Math.max(0, Math.floor((dataMin - buffer) * 10) / 10)
+    const yMax = Math.min(10, Math.ceil((dataMax + buffer) * 10) / 10)
+    // Generate ticks: 5 evenly spaced between yMin and yMax
+    const yTicks = Array.from({ length: 5 }, (_, i) =>
+      Math.round((yMin + (yMax - yMin) * i / 4) * 10) / 10
+    )
 
     // Grade distribution
     const gradeCounts = Object.fromEntries(GRADE_ORDER.map(g => [g, 0])) as Record<string, number>
@@ -310,7 +340,7 @@ export function Analytics() {
 
     // Semester timeline
     const semTimelineData = hist.map(h => ({
-      sem: h.semLabel.split('/').pop()?.trim().replace('SEMESTER', 'SEM').replace('  ', ' ') ?? h.semLabel.slice(0, 12),
+      sem: h.semLabel.replace(/Fall Semester/i, 'Fall').replace(/Winter Semester/i, 'Winter'),
       sgpa: h.gpa,
       credits: h.credits,
     }))
@@ -333,7 +363,7 @@ export function Analytics() {
     const bottomCourses = [...sorted].reverse().filter(c => c.grade !== 'S').slice(0, 5)
 
     return {
-      trendData, gradeDistData, semTimelineData,
+      trendData, gradeDistData, semTimelineData, yMin, yMax, yTicks,
       stats: { avgGpa, stdDev, trend, bestSem, sGradeCount, passRate, topCourses, bottomCourses, totalCourses: allCourses.length },
     }
   }, [vtopData])
@@ -355,7 +385,10 @@ export function Analytics() {
   const TrendIcon = trendDir === 'up' ? TrendingUp : trendDir === 'down' ? TrendingDown : Minus
   const trendColor = trendDir === 'up' ? 'text-emerald-400' : trendDir === 'down' ? 'text-red-400' : 'text-muted-foreground'
   const trendLabel = trendDir === 'up' ? 'Improving' : trendDir === 'down' ? 'Declining' : 'Stable'
-  const BTEC_TOTAL = 160
+
+  // Dynamic total: from VTOP if available, else 160
+  const programTotal = vtopData.totalProgramCredits ?? 160
+
   const consistencyScore = Math.max(0, Math.min(10, 10 - stats!.stdDev * 5))
 
   return (
@@ -437,7 +470,15 @@ export function Analytics() {
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.2 0 0)" vertical={false} />
               <XAxis dataKey="sem" tick={{ fontSize: 9, fill: '#666' }} tickLine={false} axisLine={false} interval={0} angle={-20} textAnchor="end" height={36} />
-              <YAxis domain={[0, 10]} tick={{ fontSize: 10, fill: '#666' }} tickLine={false} axisLine={false} ticks={[0, 5, 6, 7, 8, 9, 10]} width={24} />
+              <YAxis
+                domain={[yMin, yMax]}
+                ticks={yTicks}
+                tickFormatter={(v) => v.toFixed(1)}
+                tick={{ fontSize: 10, fill: '#666' }}
+                tickLine={false}
+                axisLine={false}
+                width={28}
+              />
               <Tooltip content={<GpaTip />} />
               <ReferenceLine y={vtopData.cgpa} stroke="#34d399" strokeDasharray="4 2" strokeWidth={1} opacity={0.5} />
               <Area type="monotone" dataKey="sgpa" stroke="#60a5fa" strokeWidth={2.5} fill="url(#gSgpa)" dot={{ r: 4, fill: '#60a5fa', strokeWidth: 0 }} activeDot={{ r: 6, fill: '#60a5fa' }} isAnimationActive />
@@ -486,7 +527,7 @@ export function Analytics() {
       <motion.div {...fadeUp(8)} className="rounded-2xl border border-border bg-card overflow-hidden">
         <div className="px-5 py-4 border-b border-border/60">
           <p className="text-sm font-semibold">Grade Heatmap</p>
-          <p className="text-[11px] text-muted-foreground">Grades earned per semester — darker cell = more courses</p>
+          <p className="text-[11px] text-muted-foreground">Grades earned per semester · oldest → newest · darker = more courses</p>
         </div>
         <div className="p-5">
           <GradeHeatmap history={vtopData.gradeHistory} />
@@ -506,17 +547,19 @@ export function Analytics() {
         <motion.div {...fadeUp(9)} className="rounded-2xl border border-border bg-card p-4">
           <p className="text-[11px] text-muted-foreground uppercase tracking-wider mb-1">Credit progress</p>
           <p className="text-2xl font-black tabular-nums text-blue-400">
-            {vtopData.totalCredits} <span className="text-sm font-medium text-muted-foreground">/ {BTEC_TOTAL}</span>
+            {vtopData.totalCredits} <span className="text-sm font-medium text-muted-foreground">/ {programTotal}</span>
           </p>
           <div className="mt-2 h-1.5 rounded-full bg-secondary overflow-hidden">
             <motion.div
               className="h-full rounded-full bg-blue-400/70"
               initial={{ width: 0 }}
-              animate={{ width: `${Math.min(100, (vtopData.totalCredits / BTEC_TOTAL) * 100)}%` }}
+              animate={{ width: `${Math.min(100, (vtopData.totalCredits / programTotal) * 100)}%` }}
               transition={{ duration: 1, delay: 0.5, ease: [0.16, 1, 0.3, 1] as const }}
             />
           </div>
-          <p className="text-[10px] text-muted-foreground mt-1">{Math.round((vtopData.totalCredits / BTEC_TOTAL) * 100)}% of B.Tech complete</p>
+          <p className="text-[10px] text-muted-foreground mt-1">
+            {Math.round((vtopData.totalCredits / programTotal) * 100)}% of B.Tech complete · NGC / VITOL excluded
+          </p>
         </motion.div>
       </div>
 
@@ -623,6 +666,37 @@ export function Analytics() {
           </div>
         </motion.div>
       )}
+
+      {/* VTOP data log */}
+      <motion.div {...fadeUp(14)} className="rounded-2xl border border-border/50 bg-card overflow-hidden">
+        <button
+          onClick={() => setShowDataLog(v => !v)}
+          className="w-full flex items-center justify-between px-5 py-3.5 text-left hover:bg-secondary/20 transition-colors"
+        >
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">VTOP data fetched</p>
+          <ChevronDown className={cn('size-3.5 text-muted-foreground transition-transform', showDataLog && 'rotate-180')} />
+        </button>
+        {showDataLog && (
+          <div className="px-5 pb-4 space-y-1.5 font-mono text-[11px]">
+            <div>
+              <span className="text-primary">StudentProfileAllView</span>
+              <span className="text-muted-foreground"> → {vtopData.name} · {vtopData.regNumber}</span>
+            </div>
+            <div>
+              <span className="text-primary">StudentGradeHistory</span>
+              <span className="text-muted-foreground"> → {vtopData.gradeHistory.length} sems · {stats!.totalCourses} courses · CGPA {vtopData.cgpa.toFixed(2)} · {vtopData.totalCredits} credits earned{vtopData.totalProgramCredits ? ` / ${vtopData.totalProgramCredits} total` : ''}</span>
+            </div>
+            <div>
+              <span className="text-primary">StudentTimeTableChn</span>
+              <span className="text-muted-foreground"> → {vtopData.semesters.length} sems · current: {vtopData.semesters[0]?.label ?? 'none'}</span>
+            </div>
+            <div>
+              <span className="text-primary">doStudentMarkView</span>
+              <span className="text-muted-foreground"> → {vtopData.currentSemMarks.length} course{vtopData.currentSemMarks.length !== 1 ? 's' : ''} with marks</span>
+            </div>
+          </div>
+        )}
+      </motion.div>
 
       <p className="text-[10px] text-muted-foreground text-center pb-2">
         VITGPA Analytics · VIT Chennai · data sourced from VTOP grade history

@@ -164,9 +164,20 @@ export function GradePredictor() {
 
   const allCourses = useMemo(() => {
     if (!vtopData) return []
-    const latestSemId = vtopData.semesters[0]?.id
-    if (!latestSemId) return []
-    return vtopData.coursesBySem[latestSemId] ?? []
+    // Prefer the semester whose marks we actually fetched (may differ from semesters[0])
+    const semId = vtopData.currentSemMarksId ?? vtopData.semesters[0]?.id
+    const timetableCourses = semId ? (vtopData.coursesBySem[semId] ?? []) : []
+    const timetableCodes = new Set(timetableCourses.map(c => c.code))
+    const marksOnly = vtopData.currentSemMarks
+      .filter(m => !timetableCodes.has(m.courseCode))
+      .map(m => ({
+        code: m.courseCode,
+        name: m.courseName || m.courseCode,
+        type: 'THEORY' as const,
+        credits: 0,
+        faculty: '',
+      }))
+    return [...timetableCourses, ...marksOnly]
   }, [vtopData])
 
   const selectedCourse = allCourses.find(c => c.code === selectedGradeCode)
@@ -321,32 +332,38 @@ export function GradePredictor() {
         </div>
       )}
 
-      {/* Mode toggle (no VTOP) */}
-      {(!vtopConnected || !vtopData) && (
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => { setManualMode('THEORY'); resetGrade() }}
-            className={cn('flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-medium transition-colors',
-              manualMode === 'THEORY'
-                ? 'border-primary/40 bg-primary/10 text-primary'
-                : 'border-border/60 bg-secondary/30 text-muted-foreground hover:text-foreground')}
-          >
-            <BookOpen className="size-3.5" /> Theory
-          </button>
-          <button
-            onClick={() => { setManualMode('LAB'); resetGrade() }}
-            className={cn('flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-medium transition-colors',
-              manualMode === 'LAB'
-                ? 'border-primary/40 bg-primary/10 text-primary'
-                : 'border-border/60 bg-secondary/30 text-muted-foreground hover:text-foreground')}
-          >
-            <FlaskConical className="size-3.5" /> Lab
-          </button>
-          <button onClick={resetGrade} className="ml-auto flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors">
-            <RotateCcw className="size-3" /> Reset
-          </button>
-        </div>
-      )}
+      {/* Mode toggle — always visible; selecting a tab clears course selection */}
+      <div className="flex items-center gap-2">
+        <button
+          onClick={() => {
+            setManualMode('THEORY')
+            if (selectedGradeCode) setSelectedGradeCode(null)
+            resetGrade()
+          }}
+          className={cn('flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-medium transition-colors',
+            !isLabMode
+              ? 'border-primary/40 bg-primary/10 text-primary'
+              : 'border-border/60 bg-secondary/30 text-muted-foreground hover:text-foreground')}
+        >
+          <BookOpen className="size-3.5" /> Theory
+        </button>
+        <button
+          onClick={() => {
+            setManualMode('LAB')
+            if (selectedGradeCode) setSelectedGradeCode(null)
+            resetGrade()
+          }}
+          className={cn('flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-medium transition-colors',
+            isLabMode
+              ? 'border-primary/40 bg-primary/10 text-primary'
+              : 'border-border/60 bg-secondary/30 text-muted-foreground hover:text-foreground')}
+        >
+          <FlaskConical className="size-3.5" /> Lab
+        </button>
+        <button onClick={resetGrade} className="ml-auto flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors">
+          <RotateCcw className="size-3" /> Reset
+        </button>
+      </div>
 
       {/* ════════════════════════ LAB MODE ════════════════════════════════════ */}
       {isLabMode && (
@@ -470,11 +487,6 @@ export function GradePredictor() {
             </div>
           )}
 
-          {vtopConnected && (
-            <button onClick={resetGrade} className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors mx-auto">
-              <RotateCcw className="size-3" /> Reset
-            </button>
-          )}
         </div>
       )}
 
